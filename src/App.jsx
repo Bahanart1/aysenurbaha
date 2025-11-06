@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import './App.css'
+import { supabase } from './supabaseClient'
 
 function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false)
@@ -10,9 +11,12 @@ function App() {
   const [currentDate, setCurrentDate] = useState(new Date())
   const [showLoveNote, setShowLoveNote] = useState(false)
   const [lightboxImage, setLightboxImage] = useState(null)
+  const [uploadedPhotos, setUploadedPhotos] = useState([])
+  const [showUploadModal, setShowUploadModal] = useState(false)
+  const [uploading, setUploading] = useState(false)
   
-  // Tüm görseller
-  const photos = [
+  // Tüm görseller (statik + yüklenenler)
+  const staticPhotos = [
     '/ab1.jpeg', '/ab2.jpeg', '/ab3.jpeg', '/ab4.jpeg',
     '/ab5.jpeg', '/ab6.jpeg', '/ab7.jpeg', '/ab8.jpeg',
     '/ab9.jpeg', '/ab10.jpeg', '/ab11.jpeg', '/ab12.jpeg',
@@ -20,6 +24,67 @@ function App() {
     '/ab17.jpeg', '/ab18.jpeg', '/ab19.jpeg', '/ab20.jpeg',
     '/ab21.jpeg', '/ab22.jpeg', '/ab23.jpeg', '/ab24.jpeg'
   ]
+  
+  const photos = [...staticPhotos, ...uploadedPhotos]
+
+  // Supabase'den fotoğrafları çek
+  useEffect(() => {
+    fetchPhotos()
+  }, [])
+
+  const fetchPhotos = async () => {
+    try {
+      const { data, error } = await supabase.storage
+        .from('love-photos')
+        .list('', {
+          limit: 100,
+          offset: 0,
+          sortBy: { column: 'created_at', order: 'desc' }
+        })
+
+      if (error) throw error
+
+      const photoUrls = data
+        .filter(file => file.name !== '.emptyFolderPlaceholder')
+        .map(file => {
+          const { data: urlData } = supabase.storage
+            .from('love-photos')
+            .getPublicUrl(file.name)
+          return urlData.publicUrl
+        })
+
+      setUploadedPhotos(photoUrls)
+    } catch (error) {
+      console.error('Fotoğraflar yüklenemedi:', error)
+    }
+  }
+
+  // Fotoğraf yükleme
+  const handlePhotoUpload = async (event) => {
+    const file = event.target.files[0]
+    if (!file) return
+
+    setUploading(true)
+    try {
+      const fileExt = file.name.split('.').pop()
+      const fileName = `${Date.now()}_${Math.random().toString(36).substring(7)}.${fileExt}`
+
+      const { error: uploadError } = await supabase.storage
+        .from('love-photos')
+        .upload(fileName, file)
+
+      if (uploadError) throw uploadError
+
+      await fetchPhotos()
+      setShowUploadModal(false)
+      alert('Fotoğraf başarıyla yüklendi! 💕')
+    } catch (error) {
+      console.error('Yükleme hatası:', error)
+      alert('Fotoğraf yüklenirken hata oluştu 😔')
+    } finally {
+      setUploading(false)
+    }
+  }
 
   // LocalStorage'dan giriş durumunu kontrol et
   useEffect(() => {
@@ -236,11 +301,19 @@ function App() {
 
         {/* Fotoğraf galerisi */}
         <section className="photo-gallery">
-          <h2 className="gallery-title">
-            <span className="title-decoration">✨</span>
-            Anılarımız
-            <span className="title-decoration">✨</span>
-          </h2>
+          <div className="gallery-header">
+            <h2 className="gallery-title">
+              <span className="title-decoration">✨</span>
+              Anılarımız
+              <span className="title-decoration">✨</span>
+            </h2>
+            <button 
+              className="upload-button"
+              onClick={() => setShowUploadModal(true)}
+            >
+              📸 Fotoğraf Yükle
+            </button>
+          </div>
           <div className="gallery-grid">
             {photos.map((photo, index) => (
               <div 
@@ -374,6 +447,48 @@ function App() {
             </div>
           </div>
         </section>
+
+        {/* Upload Modal */}
+        {showUploadModal && (
+          <div className="upload-modal-overlay" onClick={() => setShowUploadModal(false)}>
+            <div className="upload-modal" onClick={(e) => e.stopPropagation()}>
+              <button 
+                className="upload-modal-close" 
+                onClick={() => setShowUploadModal(false)}
+              >
+                ✕
+              </button>
+              <h2>Fotoğraf Yükle 📸</h2>
+              <p>Sevgilinizle çektiğiniz özel bir fotoğrafı yükleyin!</p>
+              <div className="upload-area">
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={handlePhotoUpload}
+                  disabled={uploading}
+                  id="photo-upload"
+                  style={{ display: 'none' }}
+                />
+                <label htmlFor="photo-upload" className={`upload-label ${uploading ? 'uploading' : ''}`}>
+                  {uploading ? (
+                    <>
+                      <div className="upload-spinner"></div>
+                      <span>Yükleniyor... 💕</span>
+                    </>
+                  ) : (
+                    <>
+                      <span className="upload-icon">📷</span>
+                      <span>Fotoğraf Seç</span>
+                    </>
+                  )}
+                </label>
+              </div>
+              <div className="upload-hint">
+                💡 JPG, PNG veya JPEG formatında olmalı
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Footer */}
         <footer className="footer">
