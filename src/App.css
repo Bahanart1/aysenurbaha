@@ -2,6 +2,8 @@
   position: relative;
   min-height: 100vh;
   overflow: hidden;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
 }
 
 .app::before {
@@ -388,6 +390,9 @@
   letter-spacing: 1px;
   text-transform: uppercase;
   overflow: hidden;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+  user-select: none;
 }
 
 .love-button::before {
@@ -1088,6 +1093,35 @@
   animation: fadeIn 0.5s ease-out;
 }
 
+.lightbox-delete {
+  position: fixed;
+  top: 30px;
+  left: 30px;
+  width: 50px;
+  height: 50px;
+  border: none;
+  background: rgba(255, 50, 50, 0.2);
+  backdrop-filter: blur(10px);
+  border-radius: 50%;
+  color: white;
+  font-size: 24px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  border: 1px solid rgba(255, 50, 50, 0.3);
+  z-index: 10001;
+  line-height: 1;
+}
+
+.lightbox-delete:hover {
+  background: rgba(255, 50, 50, 0.9);
+  transform: scale(1.1);
+  box-shadow: 0 4px 20px rgba(255, 50, 50, 0.6);
+  border-color: rgba(255, 50, 50, 0.5);
+}
+
 .lightbox-hint {
   position: fixed;
   bottom: 30px;
@@ -1113,6 +1147,14 @@
     width: 45px;
     height: 45px;
     font-size: 24px;
+  }
+
+  .lightbox-delete {
+    top: 15px;
+    left: 15px;
+    width: 45px;
+    height: 45px;
+    font-size: 20px;
   }
 
   .lightbox-counter {
@@ -1233,6 +1275,302 @@
   }
 }
 
+/* Toggle Auth Button */
+.toggle-auth-button {
+  margin-top: 15px;
+  padding: 10px 20px;
+  font-size: 0.9rem;
+  color: rgba(255, 255, 255, 0.8);
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 12px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  letter-spacing: 0.3px;
+}
+
+.toggle-auth-button:hover {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(237, 100, 166, 0.5);
+  color: white;
+}
+
+.login-footer-message {
+  margin-top: 25px;
+  padding: 16px;
+  background: rgba(237, 100, 166, 0.1);
+  border: 1px solid rgba(237, 100, 166, 0.3);
+  border-radius: 12px;
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 0.9rem;
+  text-align: center;
+  line-height: 1.6;
+  letter-spacing: 0.3px;
+}
+
+/* Not Tahtası Bölümü */
+.notes-section {
+  margin: 80px 0;
+  padding: 60px 0;
+}
+
+.notes-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 60px;
+  flex-wrap: wrap;
+  gap: 20px;
+}
+
+.notes-title {
+  font-family: 'Playfair Display', serif;
+  font-size: clamp(2.8rem, 5vw, 4rem);
+  font-weight: 700;
+  color: white;
+  text-shadow: 0 2px 40px rgba(237, 100, 166, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 25px;
+  letter-spacing: 2px;
+  margin: 0;
+}
+
+.add-note-button {
+  padding: 14px 32px;
+  font-size: 1rem;
+  font-weight: 600;
+  color: white;
+  background: linear-gradient(135deg, #ed64a6 0%, #f093fb 50%, #7877c6 100%);
+  background-size: 200% 200%;
+  border: none;
+  border-radius: 50px;
+  cursor: pointer;
+  transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 4px 20px rgba(237, 100, 166, 0.4);
+  letter-spacing: 0.5px;
+  white-space: nowrap;
+}
+
+.add-note-button:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 8px 30px rgba(237, 100, 166, 0.6);
+  background-position: 100% 0;
+}
+
+.notes-container {
+  display: flex;
+  flex-direction: column;
+  gap: 30px;
+  max-width: 900px;
+  margin: 0 auto;
+}
+
+.no-notes {
+  text-align: center;
+  padding: 80px 20px;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 24px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.no-notes p {
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 1.3rem;
+  margin-bottom: 15px;
+}
+
+.note-hint {
+  color: rgba(237, 100, 166, 0.8);
+  font-size: 1rem !important;
+}
+
+.note-card {
+  position: relative;
+  background: rgba(255, 255, 255, 0.06);
+  backdrop-filter: blur(25px) saturate(180%);
+  -webkit-backdrop-filter: blur(25px) saturate(180%);
+  border-radius: 24px;
+  padding: 30px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  box-shadow: 
+    0 8px 32px 0 rgba(31, 38, 135, 0.37),
+    0 15px 40px 0 rgba(0, 0, 0, 0.3),
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.1);
+  transition: all 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+  animation: slideInRight 0.6s ease-out;
+}
+
+.note-card:hover {
+  transform: translateY(-8px);
+  box-shadow: 
+    0 8px 32px 0 rgba(31, 38, 135, 0.37),
+    0 25px 60px 0 rgba(237, 100, 166, 0.5),
+    0 0 80px 0 rgba(120, 119, 198, 0.3),
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.2);
+  border-color: rgba(255, 255, 255, 0.25);
+}
+
+.note-baha {
+  border-left: 4px solid #6bb6ff;
+}
+
+.note-aysenur {
+  border-left: 4px solid #ed64a6;
+}
+
+.note-header-card {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 15px;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.note-author {
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: white;
+  letter-spacing: 0.5px;
+}
+
+.note-date {
+  font-size: 0.85rem;
+  color: rgba(255, 255, 255, 0.6);
+  letter-spacing: 0.3px;
+}
+
+.note-message {
+  font-size: 1.1rem;
+  line-height: 1.8;
+  color: rgba(255, 255, 255, 0.9);
+  font-weight: 300;
+  letter-spacing: 0.3px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  margin: 0;
+}
+
+.note-delete-btn {
+  position: absolute;
+  top: 20px;
+  right: 20px;
+  width: 36px;
+  height: 36px;
+  border: none;
+  background: rgba(255, 50, 50, 0.2);
+  backdrop-filter: blur(10px);
+  border-radius: 50%;
+  color: white;
+  font-size: 18px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  border: 1px solid rgba(255, 50, 50, 0.3);
+  opacity: 0;
+}
+
+.note-card:hover .note-delete-btn {
+  opacity: 1;
+}
+
+.note-delete-btn:hover {
+  background: rgba(255, 50, 50, 0.9);
+  transform: scale(1.1);
+  box-shadow: 0 4px 15px rgba(255, 50, 50, 0.6);
+}
+
+.note-form {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.note-textarea {
+  width: 100%;
+  padding: 20px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 16px;
+  color: white;
+  font-size: 1rem;
+  font-family: 'Poppins', sans-serif;
+  line-height: 1.6;
+  resize: vertical;
+  min-height: 150px;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  outline: none;
+}
+
+.note-textarea::placeholder {
+  color: rgba(255, 255, 255, 0.4);
+}
+
+.note-textarea:focus {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(237, 100, 166, 0.6);
+  box-shadow: 
+    0 0 0 3px rgba(237, 100, 166, 0.1),
+    0 4px 20px rgba(237, 100, 166, 0.3);
+}
+
+/* Mobile Touch Optimizations */
+button,
+a,
+.photo-item,
+.note-card,
+.reason-card,
+.timeline-item {
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+input,
+textarea {
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  appearance: none;
+  touch-action: manipulation;
+}
+
+/* Prevent zoom on input focus for mobile */
+@media (max-width: 768px) {
+  input,
+  textarea,
+  select {
+    font-size: 16px !important;
+  }
+}
+
+/* Responsive Not Tahtası */
+@media (max-width: 768px) {
+  .notes-header {
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+  }
+
+  .add-note-button {
+    width: 100%;
+  }
+
+  .note-card {
+    padding: 25px 20px;
+  }
+
+  .note-delete-btn {
+    opacity: 1;
+    top: 15px;
+    right: 15px;
+  }
+}
+
 /* Login Ekranı Stilleri */
 .login-container {
   position: fixed;
@@ -1265,17 +1603,24 @@
   position: absolute;
   bottom: -50px;
   font-size: 2rem;
-  animation: floatUpLogin 5s linear infinite;
-  opacity: 0.3;
+  animation: floatUpLogin 8s ease-in-out infinite;
+  opacity: 0;
+  will-change: transform, opacity;
 }
 
 @keyframes floatUpLogin {
   0% {
     transform: translateY(0) rotate(0deg);
+    opacity: 0;
+  }
+  10% {
     opacity: 0.3;
   }
   50% {
     opacity: 0.5;
+  }
+  90% {
+    opacity: 0.2;
   }
   100% {
     transform: translateY(-110vh) rotate(360deg);

@@ -1,0 +1,23 @@
+{
+  "name": "Baha & Ayşenur - Aşk Sitesi",
+  "short_name": "Baha & Ayşenur",
+  "description": "Baha ve Ayşenur'un özel aşk sitesi",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0f0c29",
+  "theme_color": "#0f0c29",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/ab1.jpeg",
+      "sizes": "192x192",
+      "type": "image/jpeg"
+    },
+    {
+      "src": "/ab1.jpeg",
+      "sizes": "512x512",
+      "type": "image/jpeg"
+    }
+  ]
+}
+

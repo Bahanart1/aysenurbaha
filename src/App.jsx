@@ -4,9 +4,11 @@ import { supabase } from './supabaseClient'
 
 function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false)
+  const [currentUser, setCurrentUser] = useState(null)
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [loginError, setLoginError] = useState('')
+  const [showRegister, setShowRegister] = useState(false)
   const [hearts, setHearts] = useState([])
   const [currentDate, setCurrentDate] = useState(new Date())
   const [showLoveNote, setShowLoveNote] = useState(false)
@@ -14,18 +16,12 @@ function App() {
   const [uploadedPhotos, setUploadedPhotos] = useState([])
   const [showUploadModal, setShowUploadModal] = useState(false)
   const [uploading, setUploading] = useState(false)
+  const [notes, setNotes] = useState([])
+  const [newNote, setNewNote] = useState('')
+  const [showNotesModal, setShowNotesModal] = useState(false)
   
-  // Tüm görseller (statik + yüklenenler)
-  const staticPhotos = [
-    '/ab1.jpeg', '/ab2.jpeg', '/ab3.jpeg', '/ab4.jpeg',
-    '/ab5.jpeg', '/ab6.jpeg', '/ab7.jpeg', '/ab8.jpeg',
-    '/ab9.jpeg', '/ab10.jpeg', '/ab11.jpeg', '/ab12.jpeg',
-    '/ab13.jpeg', '/ab14.jpeg', '/ab15.jpeg', '/ab16.jpeg',
-    '/ab17.jpeg', '/ab18.jpeg', '/ab19.jpeg', '/ab20.jpeg',
-    '/ab21.jpeg', '/ab22.jpeg', '/ab23.jpeg', '/ab24.jpeg'
-  ]
-  
-  const photos = [...staticPhotos, ...uploadedPhotos]
+  // Sadece yüklenen fotoğraflar
+  const photos = uploadedPhotos
 
   // Supabase'den fotoğrafları çek
   useEffect(() => {
@@ -86,34 +82,191 @@ function App() {
     }
   }
 
+  // Fotoğraf silme
+  const handlePhotoDelete = async (photoUrl) => {
+    const confirmDelete = window.confirm('Bu fotoğrafı silmek istediğinizden emin misiniz? 🗑️')
+    if (!confirmDelete) return
+
+    try {
+      // URL'den dosya adını çıkar
+      const fileName = photoUrl.split('/').pop().split('?')[0]
+
+      const { error } = await supabase.storage
+        .from('love-photos')
+        .remove([fileName])
+
+      if (error) throw error
+
+      await fetchPhotos()
+      setLightboxImage(null)
+      alert('Fotoğraf silindi! 🗑️')
+    } catch (error) {
+      console.error('Silme hatası:', error)
+      alert('Fotoğraf silinirken hata oluştu 😔')
+    }
+  }
+
   // LocalStorage'dan giriş durumunu kontrol et
   useEffect(() => {
-    const savedAuth = localStorage.getItem('lovesite_auth')
-    if (savedAuth === 'true') {
+    const savedUser = localStorage.getItem('lovesite_user')
+    if (savedUser) {
+      const user = JSON.parse(savedUser)
+      setCurrentUser(user)
       setIsAuthenticated(true)
     }
   }, [])
 
+  // Notları çek
+  useEffect(() => {
+    if (isAuthenticated) {
+      fetchNotes()
+    }
+  }, [isAuthenticated])
+
+  const fetchNotes = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('love_notes')
+        .select('*')
+        .order('created_at', { ascending: false })
+
+      if (error) throw error
+      setNotes(data || [])
+    } catch (error) {
+      console.error('Notlar yüklenemedi:', error)
+    }
+  }
+
   // Giriş işlemi
-  const handleLogin = (e) => {
+  const handleLogin = async (e) => {
     e.preventDefault()
     setLoginError('')
 
-    // Kullanıcı adı ve şifre kontrolü (şifreleri değiştirebilirsiniz)
-    if ((username === 'baha' || username === 'aysenur') && password === '080925') {
+    try {
+      const { data, error } = await supabase
+        .from('users')
+        .select('*')
+        .eq('username', username.toLowerCase())
+        .eq('password', password)
+        .single()
+
+      if (error || !data) {
+        setLoginError('Kullanıcı adı veya şifre hatalı! 💔')
+        return
+      }
+
+      setCurrentUser(data)
       setIsAuthenticated(true)
-      localStorage.setItem('lovesite_auth', 'true')
-    } else {
-      setLoginError('Kullanıcı adı veya şifre hatalı! 💔')
+      localStorage.setItem('lovesite_user', JSON.stringify(data))
+      setUsername('')
+      setPassword('')
+    } catch (error) {
+      setLoginError('Giriş yapılırken hata oluştu! 💔')
+    }
+  }
+
+  // Kayıt işlemi
+  const handleRegister = async (e) => {
+    e.preventDefault()
+    setLoginError('')
+
+    if (!username || !password) {
+      setLoginError('Kullanıcı adı ve şifre gerekli! 💔')
+      return
+    }
+
+    if (password.length < 4) {
+      setLoginError('Şifre en az 4 karakter olmalı! 💔')
+      return
+    }
+
+    try {
+      const { data, error } = await supabase
+        .from('users')
+        .insert([
+          { 
+            username: username.toLowerCase(), 
+            password: password,
+            role: 'visitor'
+          }
+        ])
+        .select()
+        .single()
+
+      if (error) {
+        if (error.code === '23505') {
+          setLoginError('Bu kullanıcı adı zaten alınmış! 💔')
+        } else {
+          setLoginError('Kayıt olurken hata oluştu! 💔')
+        }
+        return
+      }
+
+      setCurrentUser(data)
+      setIsAuthenticated(true)
+      localStorage.setItem('lovesite_user', JSON.stringify(data))
+      setUsername('')
+      setPassword('')
+      setShowRegister(false)
+    } catch (error) {
+      setLoginError('Kayıt olurken hata oluştu! 💔')
     }
   }
 
   // Çıkış işlemi
   const handleLogout = () => {
     setIsAuthenticated(false)
-    localStorage.removeItem('lovesite_auth')
+    setCurrentUser(null)
+    localStorage.removeItem('lovesite_user')
     setUsername('')
     setPassword('')
+  }
+
+  // Not ekleme
+  const handleAddNote = async (e) => {
+    e.preventDefault()
+    if (!newNote.trim()) return
+
+    try {
+      const { error } = await supabase
+        .from('love_notes')
+        .insert([
+          {
+            author: currentUser.username,
+            message: newNote.trim()
+          }
+        ])
+
+      if (error) throw error
+
+      setNewNote('')
+      await fetchNotes()
+      alert('Not eklendi! 💕')
+    } catch (error) {
+      console.error('Not eklenirken hata:', error)
+      alert('Not eklenirken hata oluştu 😔')
+    }
+  }
+
+  // Not silme
+  const handleDeleteNote = async (noteId) => {
+    const confirmDelete = window.confirm('Bu notu silmek istediğinizden emin misiniz? 🗑️')
+    if (!confirmDelete) return
+
+    try {
+      const { error } = await supabase
+        .from('love_notes')
+        .delete()
+        .eq('id', noteId)
+
+      if (error) throw error
+
+      await fetchNotes()
+      alert('Not silindi! 🗑️')
+    } catch (error) {
+      console.error('Not silinirken hata:', error)
+      alert('Not silinirken hata oluştu 😔')
+    }
   }
 
   // Rastgele kalpler oluştur
@@ -179,35 +332,20 @@ function App() {
   if (!isAuthenticated) {
     return (
       <div className="login-container">
-        <div className="login-hearts-bg">
-          {[...Array(15)].map((_, i) => (
-            <div
-              key={i}
-              className="login-heart"
-              style={{
-                left: `${Math.random() * 100}%`,
-                animationDelay: `${Math.random() * 3}s`,
-                animationDuration: `${3 + Math.random() * 2}s`
-              }}
-            >
-              ❤️
-            </div>
-          ))}
-        </div>
         <div className="login-box">
           <div className="login-header">
             <div className="login-icon">💕</div>
             <h1>Baha & Ayşenur</h1>
             <p>Özel Aşk Sitesi</p>
           </div>
-          <form onSubmit={handleLogin} className="login-form">
+          <form onSubmit={showRegister ? handleRegister : handleLogin} className="login-form">
             <div className="input-group">
               <label>Kullanıcı Adı</label>
               <input
                 type="text"
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
-                placeholder="baha veya aysenur"
+                placeholder={showRegister ? "Kullanıcı adı seçin" : "Kullanıcı adınız"}
                 required
               />
             </div>
@@ -217,15 +355,32 @@ function App() {
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                placeholder="Şifrenizi girin"
+                placeholder={showRegister ? "Şifre oluşturun (min 4 karakter)" : "Şifreniz"}
                 required
               />
             </div>
             {loginError && <div className="login-error">{loginError}</div>}
             <button type="submit" className="login-button">
-              💖 Giriş Yap
+              {showRegister ? '📝 Kayıt Ol' : '💖 Giriş Yap'}
+            </button>
+            <button 
+              type="button" 
+              className="toggle-auth-button"
+              onClick={() => {
+                setShowRegister(!showRegister)
+                setLoginError('')
+                setUsername('')
+                setPassword('')
+              }}
+            >
+              {showRegister ? 'Zaten hesabım var, Giriş Yap' : 'Hesabım yok, Kayıt Ol'}
             </button>
           </form>
+          {!showRegister && (
+            <div className="login-footer-message">
+              💌 Bu aşka tanıklık etmek istiyorsanız kayıt olabilirsiniz
+            </div>
+          )}
         </div>
       </div>
     )
@@ -345,6 +500,17 @@ function App() {
               {photos.indexOf(lightboxImage) + 1} / {photos.length}
             </div>
 
+            <button 
+              className="lightbox-delete" 
+              onClick={(e) => {
+                e.stopPropagation()
+                handlePhotoDelete(lightboxImage)
+              }}
+              aria-label="Sil"
+            >
+              🗑️
+            </button>
+
             <div className="lightbox-content" onClick={(e) => e.stopPropagation()}>
               <img src={lightboxImage} alt="Büyük görsel" />
             </div>
@@ -378,6 +544,95 @@ function App() {
             
             <div className="lightbox-hint">
               ESC ile kapatabilir, ← → ok tuşları ile gezinebilirsiniz
+            </div>
+          </div>
+        )}
+
+        {/* Not Tahtası Bölümü */}
+        <section className="notes-section">
+          <div className="notes-header">
+            <h2 className="notes-title">
+              <span style={{ animation: 'none' }}>✍️</span>
+              Aşk Notlarımız
+            </h2>
+            {currentUser?.role === 'admin' && (
+              <button 
+                className="add-note-button"
+                onClick={() => setShowNotesModal(true)}
+              >
+                ✍️ Not Ekle
+              </button>
+            )}
+          </div>
+          
+          <div className="notes-container">
+            {notes.length === 0 ? (
+              <div className="no-notes">
+                <p>Henüz not eklenmemiş 💭</p>
+                {currentUser?.role === 'admin' && (
+                  <p className="note-hint">İlk notu siz ekleyin!</p>
+                )}
+              </div>
+            ) : (
+              notes.map((note) => (
+                <div 
+                  key={note.id} 
+                  className={`note-card ${note.author === 'baha' ? 'note-baha' : 'note-aysenur'}`}
+                >
+                  <div className="note-header-card">
+                    <span className="note-author">
+                      {note.author === 'baha' ? '💙 Baha' : '💕 Ayşenur'}
+                    </span>
+                    <span className="note-date">
+                      {new Date(note.created_at).toLocaleDateString('tr-TR', {
+                        day: 'numeric',
+                        month: 'long',
+                        year: 'numeric',
+                        hour: '2-digit',
+                        minute: '2-digit'
+                      })}
+                    </span>
+                  </div>
+                  <p className="note-message">{note.message}</p>
+                  {currentUser?.role === 'admin' && (
+                    <button 
+                      className="note-delete-btn"
+                      onClick={() => handleDeleteNote(note.id)}
+                    >
+                      🗑️
+                    </button>
+                  )}
+                </div>
+              ))
+            )}
+          </div>
+        </section>
+
+        {/* Not Ekleme Modal */}
+        {showNotesModal && currentUser?.role === 'admin' && (
+          <div className="upload-modal-overlay" onClick={() => setShowNotesModal(false)}>
+            <div className="upload-modal" onClick={(e) => e.stopPropagation()}>
+              <button 
+                className="upload-modal-close" 
+                onClick={() => setShowNotesModal(false)}
+              >
+                ✕
+              </button>
+              <h2>Sevgilime Not Yaz 💌</h2>
+              <p>Sevgilinize özel bir mesaj bırakın!</p>
+              <form onSubmit={handleAddNote} className="note-form">
+                <textarea
+                  value={newNote}
+                  onChange={(e) => setNewNote(e.target.value)}
+                  placeholder="Sevgilime yazmak istediğim..."
+                  className="note-textarea"
+                  rows="6"
+                  required
+                />
+                <button type="submit" className="login-button">
+                  💕 Not Ekle
+                </button>
+              </form>
             </div>
           </div>
         )}
