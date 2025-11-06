@@ -1,0 +1,304 @@
+import { useState, useEffect } from 'react'
+import './App.css'
+
+function App() {
+  const [hearts, setHearts] = useState([])
+  const [currentDate, setCurrentDate] = useState(new Date())
+  const [showLoveNote, setShowLoveNote] = useState(false)
+  const [lightboxImage, setLightboxImage] = useState(null)
+  
+  // Tüm görseller
+  const photos = [
+    '/ab1.jpeg', '/ab2.jpeg', '/ab3.jpeg', '/ab4.jpeg',
+    '/ab5.jpeg', '/ab6.jpeg', '/ab7.jpeg', '/ab8.jpeg',
+    '/ab9.jpeg', '/ab10.jpeg', '/ab11.jpeg', '/ab12.jpeg',
+    '/ab13.jpeg', '/ab14.jpeg', '/ab15.jpeg', '/ab16.jpeg',
+    '/ab17.jpeg', '/ab18.jpeg', '/ab19.jpeg', '/ab20.jpeg',
+    '/ab21.jpeg', '/ab22.jpeg', '/ab23.jpeg', '/ab24.jpeg'
+  ]
+
+  // Rastgele kalpler oluştur
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const newHeart = {
+        id: Date.now(),
+        left: Math.random() * 100,
+        animationDuration: 3 + Math.random() * 2,
+        size: 10 + Math.random() * 20
+      }
+      setHearts(prev => [...prev.slice(-20), newHeart])
+    }, 500)
+
+    return () => clearInterval(interval)
+  }, [])
+
+  // Tarih güncellemesi
+  useEffect(() => {
+    const timer = setInterval(() => setCurrentDate(new Date()), 1000)
+    return () => clearInterval(timer)
+  }, [])
+
+  // Klavye kontrolleri (ESC, ok tuşları)
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (!lightboxImage) return
+
+      if (e.key === 'Escape') {
+        setLightboxImage(null)
+      } else if (e.key === 'ArrowLeft') {
+        const currentIndex = photos.indexOf(lightboxImage)
+        const prevIndex = currentIndex === 0 ? photos.length - 1 : currentIndex - 1
+        setLightboxImage(photos[prevIndex])
+      } else if (e.key === 'ArrowRight') {
+        const currentIndex = photos.indexOf(lightboxImage)
+        const nextIndex = currentIndex === photos.length - 1 ? 0 : currentIndex + 1
+        setLightboxImage(photos[nextIndex])
+      }
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [lightboxImage, photos])
+
+  // Lightbox açıkken scroll'u engelle
+  useEffect(() => {
+    if (lightboxImage) {
+      document.body.style.overflow = 'hidden'
+    } else {
+      document.body.style.overflow = 'auto'
+    }
+    return () => {
+      document.body.style.overflow = 'auto'
+    }
+  }, [lightboxImage])
+
+  // Birlikte geçirilen süre hesaplama
+  const startDate = new Date('2025-09-08') // Sevgili olma tarihimiz
+  const daysTogether = Math.floor((currentDate - startDate) / (1000 * 60 * 60 * 24))
+
+  return (
+    <div className="app">
+      {/* Animasyonlu kalpler */}
+      <div className="hearts-container">
+        {hearts.map(heart => (
+          <div
+            key={heart.id}
+            className="floating-heart"
+            style={{
+              left: `${heart.left}%`,
+              animationDuration: `${heart.animationDuration}s`,
+              fontSize: `${heart.size}px`
+            }}
+          >
+            ❤️
+          </div>
+        ))}
+      </div>
+
+      {/* Ana içerik */}
+      <div className="content">
+        {/* Başlık bölümü */}
+        <header className="hero-section">
+          <h1 className="main-title">
+            <span className="name">Baha</span>
+            <span className="heart-icon">❤️</span>
+            <span className="name">Ayşenur</span>
+          </h1>
+          <p className="family-name">Şenel</p>
+          <p className="subtitle">Bizim Hikayemiz</p>
+          <div className="days-counter">
+            <div className="counter-box">
+              <span className="counter-number">{daysTogether}</span>
+              <span className="counter-label">Gündür Sevgiliyiz 💕</span>
+            </div>
+          </div>
+        </header>
+
+        {/* Aşk mesajı bölümü */}
+        <section className="love-message">
+          <div className="message-card">
+            <div className="card-decoration">💖</div>
+            <h2>Sevgilim Ayşenur'a,</h2>
+            <p>
+              Seninle geçirdiğim her an hayatımın en güzel anları. 
+              Gülüşün benim en sevdiğim melodi, gözlerin benim en sevdiğim manzara.
+              Her yeni günde seninle olmak beni dünyanın en şanslı insanı yapıyor.
+            </p>
+            <p>
+              Bu site sadece sana olan aşkımın küçük bir göstergesi. 
+              Seninle paylaştığımız tüm anılar kalbimde sonsuza kadar yaşayacak.
+            </p>
+            <p className="signature">Seni sonsuza dek seven, Baha ❤️</p>
+            <button className="love-button" onClick={() => setShowLoveNote(!showLoveNote)}>
+              {showLoveNote ? '💝 Mesajı Gizle' : '💌 Özel Mesaj Aç'}
+            </button>
+            {showLoveNote && (
+              <div className="hidden-note">
+                <p>Her sabah gözlerimi açtığımda ilk düşündüğüm sensin... 
+                Her gece uyumadan önce son düşündüğüm de... 
+                Sen benim hayatımın en güzel armağanısın. 
+                Seninle her an özel, seninle her gün bayram. 
+                Seni çok ama çok seviyorum! 💕</p>
+              </div>
+            )}
+          </div>
+        </section>
+
+        {/* Fotoğraf galerisi */}
+        <section className="photo-gallery">
+          <h2 className="gallery-title">
+            <span className="title-decoration">✨</span>
+            Anılarımız
+            <span className="title-decoration">✨</span>
+          </h2>
+          <div className="gallery-grid">
+            {photos.map((photo, index) => (
+              <div 
+                key={index} 
+                className="photo-item"
+                onClick={() => setLightboxImage(photo)}
+              >
+                <img src={photo} alt={`Anımız ${index + 1}`} />
+                <div className="photo-overlay">
+                  <span className="overlay-text">💕</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        {/* Lightbox Modal */}
+        {lightboxImage && (
+          <div className="lightbox-overlay" onClick={() => setLightboxImage(null)}>
+            <button 
+              className="lightbox-close" 
+              onClick={() => setLightboxImage(null)}
+              aria-label="Kapat"
+            >
+              ✕
+            </button>
+            
+            <div className="lightbox-counter">
+              {photos.indexOf(lightboxImage) + 1} / {photos.length}
+            </div>
+
+            <div className="lightbox-content" onClick={(e) => e.stopPropagation()}>
+              <img src={lightboxImage} alt="Büyük görsel" />
+            </div>
+            
+            <div className="lightbox-nav">
+              <button 
+                className="lightbox-prev"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  const currentIndex = photos.indexOf(lightboxImage)
+                  const prevIndex = currentIndex === 0 ? photos.length - 1 : currentIndex - 1
+                  setLightboxImage(photos[prevIndex])
+                }}
+                aria-label="Önceki"
+              >
+                ‹
+              </button>
+              <button 
+                className="lightbox-next"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  const currentIndex = photos.indexOf(lightboxImage)
+                  const nextIndex = currentIndex === photos.length - 1 ? 0 : currentIndex + 1
+                  setLightboxImage(photos[nextIndex])
+                }}
+                aria-label="Sonraki"
+              >
+                ›
+              </button>
+            </div>
+            
+            <div className="lightbox-hint">
+              ESC ile kapatabilir, ← → ok tuşları ile gezinebilirsiniz
+            </div>
+          </div>
+        )}
+
+        {/* Nedenler bölümü */}
+        <section className="reasons-section">
+          <h2 className="reasons-title">Seni Neden Seviyorum? ❤️</h2>
+          <div className="reasons-grid">
+            <div className="reason-card">
+              <div className="reason-icon">😊</div>
+              <h3>Gülüşün</h3>
+              <p>Gülümsemen tüm kötü günlerimi güzel yapıyor</p>
+            </div>
+            <div className="reason-card">
+              <div className="reason-icon">✨</div>
+              <h3>Enerjin</h3>
+              <p>Yanımda olduğunda hayat daha renkli</p>
+            </div>
+            <div className="reason-card">
+              <div className="reason-icon">💖</div>
+              <h3>Kalbin</h3>
+              <p>İyiliğin ve sevgin sınır tanımıyor</p>
+            </div>
+            <div className="reason-card">
+              <div className="reason-icon">🌟</div>
+              <h3>Sen Sensin</h3>
+              <p>Olduğun gibisin ve bu seni mükemmel yapıyor</p>
+            </div>
+          </div>
+        </section>
+
+        {/* Özel anlar timeline */}
+        <section className="timeline">
+          <h2 className="timeline-title">Özel Anlarımız</h2>
+          <div className="timeline-container">
+            <div className="timeline-item">
+              <div className="timeline-icon">🏫</div>
+              <div className="timeline-content">
+                <h3>İlk Tanışma - İlkokul</h3>
+                <p className="timeline-date">Yıllar önce...</p>
+                <p>Her şey ilkokulda başladı... Aynı sınıfta tanıştık ama o zamanlar bilmiyorduk kaderin bizi tekrar bir araya getireceğini.</p>
+              </div>
+            </div>
+            <div className="timeline-item">
+              <div className="timeline-icon">✨</div>
+              <div className="timeline-content">
+                <h3>Kaderin Buluşturması</h3>
+                <p className="timeline-date">5 Temmuz 2025</p>
+                <p>Yıllar sonra kader bizi tekrar karşılaştırdı... O an anladım ki bazı şeyler tesadüf değil, yazılmış...</p>
+              </div>
+            </div>
+            <div className="timeline-item">
+              <div className="timeline-icon">💝</div>
+              <div className="timeline-content">
+                <h3>Sevgili Olduk</h3>
+                <p className="timeline-date">8 Eylül 2025</p>
+                <p>Hayatımın en güzel gününde "Evet" dedin... İlkokul arkadaşlığından büyük bir aşka dönüşen hikayemiz başladı.</p>
+              </div>
+            </div>
+            <div className="timeline-item">
+              <div className="timeline-icon">🎉</div>
+              <div className="timeline-content">
+                <h3>Özel Anılarımız</h3>
+                <p className="timeline-date">Devam ediyor...</p>
+                <p>Seninle yaşadığımız her an özel. Birlikte yarattığımız anılar paha biçilemez.</p>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* Footer */}
+        <footer className="footer">
+          <div className="footer-heart">💕</div>
+          <p>Sonsuza dek birlikte...</p>
+          <p className="footer-date">{currentDate.toLocaleDateString('tr-TR', { 
+            year: 'numeric', 
+            month: 'long', 
+            day: 'numeric' 
+          })}</p>
+        </footer>
+      </div>
+    </div>
+  )
+}
+
+export default App
+
