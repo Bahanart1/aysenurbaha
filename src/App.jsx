@@ -2,6 +2,10 @@ import { useState, useEffect } from 'react'
 import './App.css'
 
 function App() {
+  const [isAuthenticated, setIsAuthenticated] = useState(false)
+  const [username, setUsername] = useState('')
+  const [password, setPassword] = useState('')
+  const [loginError, setLoginError] = useState('')
   const [hearts, setHearts] = useState([])
   const [currentDate, setCurrentDate] = useState(new Date())
   const [showLoveNote, setShowLoveNote] = useState(false)
@@ -16,6 +20,36 @@ function App() {
     '/ab17.jpeg', '/ab18.jpeg', '/ab19.jpeg', '/ab20.jpeg',
     '/ab21.jpeg', '/ab22.jpeg', '/ab23.jpeg', '/ab24.jpeg'
   ]
+
+  // LocalStorage'dan giriş durumunu kontrol et
+  useEffect(() => {
+    const savedAuth = localStorage.getItem('lovesite_auth')
+    if (savedAuth === 'true') {
+      setIsAuthenticated(true)
+    }
+  }, [])
+
+  // Giriş işlemi
+  const handleLogin = (e) => {
+    e.preventDefault()
+    setLoginError('')
+
+    // Kullanıcı adı ve şifre kontrolü (şifreleri değiştirebilirsiniz)
+    if ((username === 'baha' || username === 'aysenur') && password === 'love2025') {
+      setIsAuthenticated(true)
+      localStorage.setItem('lovesite_auth', 'true')
+    } else {
+      setLoginError('Kullanıcı adı veya şifre hatalı! 💔')
+    }
+  }
+
+  // Çıkış işlemi
+  const handleLogout = () => {
+    setIsAuthenticated(false)
+    localStorage.removeItem('lovesite_auth')
+    setUsername('')
+    setPassword('')
+  }
 
   // Rastgele kalpler oluştur
   useEffect(() => {
@@ -75,6 +109,65 @@ function App() {
   // Birlikte geçirilen süre hesaplama
   const startDate = new Date('2025-09-08') // Sevgili olma tarihimiz
   const daysTogether = Math.floor((currentDate - startDate) / (1000 * 60 * 60 * 24))
+
+  // Giriş yapılmadıysa login ekranını göster
+  if (!isAuthenticated) {
+    return (
+      <div className="login-container">
+        <div className="login-hearts-bg">
+          {[...Array(15)].map((_, i) => (
+            <div
+              key={i}
+              className="login-heart"
+              style={{
+                left: `${Math.random() * 100}%`,
+                animationDelay: `${Math.random() * 3}s`,
+                animationDuration: `${3 + Math.random() * 2}s`
+              }}
+            >
+              ❤️
+            </div>
+          ))}
+        </div>
+        <div className="login-box">
+          <div className="login-header">
+            <div className="login-icon">💕</div>
+            <h1>Baha & Ayşenur</h1>
+            <p>Özel Aşk Sitesi</p>
+          </div>
+          <form onSubmit={handleLogin} className="login-form">
+            <div className="input-group">
+              <label>Kullanıcı Adı</label>
+              <input
+                type="text"
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+                placeholder="baha veya aysenur"
+                required
+              />
+            </div>
+            <div className="input-group">
+              <label>Şifre</label>
+              <input
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="Şifrenizi girin"
+                required
+              />
+            </div>
+            {loginError && <div className="login-error">{loginError}</div>}
+            <button type="submit" className="login-button">
+              💖 Giriş Yap
+            </button>
+          </form>
+          <div className="login-hint">
+            💡 İpucu: Kullanıcı adı <strong>baha</strong> veya <strong>aysenur</strong>, şifre <strong>love2025</strong>
+          </div>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="app">
@@ -294,6 +387,9 @@ function App() {
             month: 'long', 
             day: 'numeric' 
           })}</p>
+          <button onClick={handleLogout} className="logout-button">
+            🚪 Çıkış Yap
+          </button>
         </footer>
       </div>
     </div>
