@@ -462,12 +462,14 @@ function App() {
               Anılarımız
               <span className="title-decoration">✨</span>
             </h2>
-            <button 
-              className="upload-button"
-              onClick={() => setShowUploadModal(true)}
-            >
-              📸 Fotoğraf Yükle
-            </button>
+            {currentUser?.role === 'admin' && (
+              <button 
+                className="upload-button"
+                onClick={() => setShowUploadModal(true)}
+              >
+                📸 Fotoğraf Yükle
+              </button>
+            )}
           </div>
           <div className="gallery-grid">
             {photos.map((photo, index) => (
@@ -500,16 +502,18 @@ function App() {
               {photos.indexOf(lightboxImage) + 1} / {photos.length}
             </div>
 
-            <button 
-              className="lightbox-delete" 
-              onClick={(e) => {
-                e.stopPropagation()
-                handlePhotoDelete(lightboxImage)
-              }}
-              aria-label="Sil"
-            >
-              🗑️
-            </button>
+            {currentUser?.role === 'admin' && (
+              <button 
+                className="lightbox-delete" 
+                onClick={(e) => {
+                  e.stopPropagation()
+                  handlePhotoDelete(lightboxImage)
+                }}
+                aria-label="Sil"
+              >
+                🗑️
+              </button>
+            )}
 
             <div className="lightbox-content" onClick={(e) => e.stopPropagation()}>
               <img src={lightboxImage} alt="Büyük görsel" />
@@ -704,7 +708,7 @@ function App() {
         </section>
 
         {/* Upload Modal */}
-        {showUploadModal && (
+        {showUploadModal && currentUser?.role === 'admin' && (
           <div className="upload-modal-overlay" onClick={() => setShowUploadModal(false)}>
             <div className="upload-modal" onClick={(e) => e.stopPropagation()}>
               <button 
