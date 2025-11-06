@@ -35,7 +35,7 @@ function App() {
     setLoginError('')
 
     // Kullanıcı adı ve şifre kontrolü (şifreleri değiştirebilirsiniz)
-    if ((username === 'baha' || username === 'aysenur') && password === '08092025') {
+    if ((username === 'baha' || username === 'aysenur') && password === '080925') {
       setIsAuthenticated(true)
       localStorage.setItem('lovesite_auth', 'true')
     } else {
