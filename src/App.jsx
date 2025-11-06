@@ -19,6 +19,14 @@ function App() {
   const [notes, setNotes] = useState([])
   const [newNote, setNewNote] = useState('')
   const [showNotesModal, setShowNotesModal] = useState(false)
+  const [timelineEvents, setTimelineEvents] = useState([])
+  const [showTimelineModal, setShowTimelineModal] = useState(false)
+  const [timelineForm, setTimelineForm] = useState({
+    icon: '',
+    title: '',
+    date: '',
+    description: ''
+  })
   
   // Sadece yüklenen fotoğraflar
   const photos = uploadedPhotos
@@ -120,6 +128,7 @@ function App() {
   useEffect(() => {
     if (isAuthenticated) {
       fetchNotes()
+      fetchTimelineEvents()
     }
   }, [isAuthenticated])
 
@@ -134,6 +143,80 @@ function App() {
       setNotes(data || [])
     } catch (error) {
       console.error('Notlar yüklenemedi:', error)
+    }
+  }
+
+  // Timeline olaylarını çek
+  const fetchTimelineEvents = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('timeline_events')
+        .select('*')
+        .order('order_index', { ascending: true })
+
+      if (error) throw error
+      setTimelineEvents(data || [])
+    } catch (error) {
+      console.error('Timeline yüklenemedi:', error)
+    }
+  }
+
+  // Timeline olayı ekleme
+  const handleAddTimeline = async (e) => {
+    e.preventDefault()
+    
+    if (!timelineForm.icon || !timelineForm.title || !timelineForm.date || !timelineForm.description) {
+      alert('Tüm alanları doldurun! 💔')
+      return
+    }
+
+    try {
+      const maxOrder = timelineEvents.length > 0 
+        ? Math.max(...timelineEvents.map(e => e.order_index))
+        : 0
+
+      const { error } = await supabase
+        .from('timeline_events')
+        .insert([
+          {
+            icon: timelineForm.icon,
+            title: timelineForm.title,
+            date: timelineForm.date,
+            description: timelineForm.description,
+            order_index: maxOrder + 1
+          }
+        ])
+
+      if (error) throw error
+
+      setTimelineForm({ icon: '', title: '', date: '', description: '' })
+      await fetchTimelineEvents()
+      setShowTimelineModal(false)
+      alert('Timeline olayı eklendi! 💕')
+    } catch (error) {
+      console.error('Timeline ekleme hatası:', error)
+      alert('Timeline eklenirken hata oluştu 😔')
+    }
+  }
+
+  // Timeline olayı silme
+  const handleDeleteTimeline = async (eventId) => {
+    const confirmDelete = window.confirm('Bu olayı silmek istediğinizden emin misiniz? 🗑️')
+    if (!confirmDelete) return
+
+    try {
+      const { error } = await supabase
+        .from('timeline_events')
+        .delete()
+        .eq('id', eventId)
+
+      if (error) throw error
+
+      await fetchTimelineEvents()
+      alert('Timeline olayı silindi! 🗑️')
+    } catch (error) {
+      console.error('Timeline silme hatası:', error)
+      alert('Timeline silinirken hata oluştu 😔')
     }
   }
 
@@ -670,42 +753,110 @@ function App() {
 
         {/* Özel anlar timeline */}
         <section className="timeline">
-          <h2 className="timeline-title">Özel Anlarımız</h2>
+          <div className="timeline-header-section">
+            <h2 className="timeline-title">Özel Anlarımız</h2>
+            {currentUser?.role === 'admin' && (
+              <button 
+                className="add-timeline-button"
+                onClick={() => setShowTimelineModal(true)}
+              >
+                ➕ Olay Ekle
+              </button>
+            )}
+          </div>
           <div className="timeline-container">
-            <div className="timeline-item">
-              <div className="timeline-icon">🏫</div>
-              <div className="timeline-content">
-                <h3>İlk Tanışma - İlkokul</h3>
-                <p className="timeline-date">Yıllar önce...</p>
-                <p>Her şey ilkokulda başladı... Aynı sınıfta tanıştık ama o zamanlar bilmiyorduk kaderin bizi tekrar bir araya getireceğini.</p>
+            {timelineEvents.length === 0 ? (
+              <div className="no-timeline">
+                <p>Henüz özel an eklenmemiş 💭</p>
+                {currentUser?.role === 'admin' && (
+                  <p className="timeline-hint">İlk anınızı ekleyin!</p>
+                )}
               </div>
-            </div>
-            <div className="timeline-item">
-              <div className="timeline-icon">✨</div>
-              <div className="timeline-content">
-                <h3>Kaderin Buluşturması</h3>
-                <p className="timeline-date">5 Temmuz 2025</p>
-                <p>Yıllar sonra kader bizi tekrar karşılaştırdı... O an anladım ki bazı şeyler tesadüf değil, yazılmış...</p>
-              </div>
-            </div>
-            <div className="timeline-item">
-              <div className="timeline-icon">💝</div>
-              <div className="timeline-content">
-                <h3>Sevgili Olduk</h3>
-                <p className="timeline-date">8 Eylül 2025</p>
-                <p>Hayatımın en güzel gününde "Evet" dedin... İlkokul arkadaşlığından büyük bir aşka dönüşen hikayemiz başladı.</p>
-              </div>
-            </div>
-            <div className="timeline-item">
-              <div className="timeline-icon">🎉</div>
-              <div className="timeline-content">
-                <h3>Özel Anılarımız</h3>
-                <p className="timeline-date">Devam ediyor...</p>
-                <p>Seninle yaşadığımız her an özel. Birlikte yarattığımız anılar paha biçilemez.</p>
-              </div>
-            </div>
+            ) : (
+              timelineEvents.map((event) => (
+                <div key={event.id} className="timeline-item">
+                  <div className="timeline-icon">{event.icon}</div>
+                  <div className="timeline-content">
+                    <h3>{event.title}</h3>
+                    <p className="timeline-date">{event.date}</p>
+                    <p>{event.description}</p>
+                    {currentUser?.role === 'admin' && (
+                      <button 
+                        className="timeline-delete-btn"
+                        onClick={() => handleDeleteTimeline(event.id)}
+                      >
+                        🗑️
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ))
+            )}
           </div>
         </section>
+
+        {/* Timeline Ekleme Modal */}
+        {showTimelineModal && currentUser?.role === 'admin' && (
+          <div className="upload-modal-overlay" onClick={() => setShowTimelineModal(false)}>
+            <div className="upload-modal timeline-modal" onClick={(e) => e.stopPropagation()}>
+              <button 
+                className="upload-modal-close" 
+                onClick={() => setShowTimelineModal(false)}
+              >
+                ✕
+              </button>
+              <h2>Özel An Ekle 💫</h2>
+              <p>Yeni bir özel anınızı timeline'a ekleyin!</p>
+              <form onSubmit={handleAddTimeline} className="timeline-form">
+                <div className="input-group">
+                  <label>İkon (Emoji)</label>
+                  <input
+                    type="text"
+                    value={timelineForm.icon}
+                    onChange={(e) => setTimelineForm({...timelineForm, icon: e.target.value})}
+                    placeholder="Örn: 🎉, 💕, ✨"
+                    maxLength="2"
+                    required
+                  />
+                </div>
+                <div className="input-group">
+                  <label>Başlık</label>
+                  <input
+                    type="text"
+                    value={timelineForm.title}
+                    onChange={(e) => setTimelineForm({...timelineForm, title: e.target.value})}
+                    placeholder="Örn: İlk Buluşmamız"
+                    required
+                  />
+                </div>
+                <div className="input-group">
+                  <label>Tarih</label>
+                  <input
+                    type="text"
+                    value={timelineForm.date}
+                    onChange={(e) => setTimelineForm({...timelineForm, date: e.target.value})}
+                    placeholder="Örn: 14 Şubat 2025"
+                    required
+                  />
+                </div>
+                <div className="input-group">
+                  <label>Açıklama</label>
+                  <textarea
+                    value={timelineForm.description}
+                    onChange={(e) => setTimelineForm({...timelineForm, description: e.target.value})}
+                    placeholder="Bu özel anı açıklayın..."
+                    className="note-textarea"
+                    rows="4"
+                    required
+                  />
+                </div>
+                <button type="submit" className="login-button">
+                  💕 Ekle
+                </button>
+              </form>
+            </div>
+          </div>
+        )}
 
         {/* Upload Modal */}
         {showUploadModal && currentUser?.role === 'admin' && (

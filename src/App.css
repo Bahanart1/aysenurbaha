@@ -743,15 +743,45 @@
   margin: 80px 0;
 }
 
+.timeline-header-section {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 70px;
+  flex-wrap: wrap;
+  gap: 20px;
+}
+
 .timeline-title {
   font-family: 'Playfair Display', serif;
   font-size: clamp(2.8rem, 5vw, 4rem);
   font-weight: 700;
   color: white;
-  text-align: center;
-  margin-bottom: 70px;
   text-shadow: 0 2px 40px rgba(237, 100, 166, 0.5);
   letter-spacing: 2px;
+  margin: 0;
+}
+
+.add-timeline-button {
+  padding: 14px 32px;
+  font-size: 1rem;
+  font-weight: 600;
+  color: white;
+  background: linear-gradient(135deg, #ed64a6 0%, #f093fb 50%, #7877c6 100%);
+  background-size: 200% 200%;
+  border: none;
+  border-radius: 50px;
+  cursor: pointer;
+  transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 4px 20px rgba(237, 100, 166, 0.4);
+  letter-spacing: 0.5px;
+  white-space: nowrap;
+}
+
+.add-timeline-button:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 8px 30px rgba(237, 100, 166, 0.6);
+  background-position: 100% 0;
 }
 
 .timeline-container {
@@ -833,6 +863,67 @@
   transition: all 0.5s cubic-bezier(0.4, 0, 0.2, 1);
   position: relative;
   overflow: hidden;
+}
+
+.timeline-delete-btn {
+  position: absolute;
+  top: 20px;
+  right: 20px;
+  width: 36px;
+  height: 36px;
+  border: none;
+  background: rgba(255, 50, 50, 0.2);
+  backdrop-filter: blur(10px);
+  border-radius: 50%;
+  color: white;
+  font-size: 18px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  border: 1px solid rgba(255, 50, 50, 0.3);
+  opacity: 0;
+  z-index: 10;
+}
+
+.timeline-item:hover .timeline-delete-btn {
+  opacity: 1;
+}
+
+.timeline-delete-btn:hover {
+  background: rgba(255, 50, 50, 0.9);
+  transform: scale(1.1);
+  box-shadow: 0 4px 15px rgba(255, 50, 50, 0.6);
+}
+
+.no-timeline {
+  text-align: center;
+  padding: 80px 20px;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 24px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.no-timeline p {
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 1.3rem;
+  margin-bottom: 15px;
+}
+
+.timeline-hint {
+  color: rgba(237, 100, 166, 0.8);
+  font-size: 1rem !important;
+}
+
+.timeline-form {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.timeline-modal {
+  max-width: 600px !important;
 }
 
 .timeline-content::before {
@@ -1221,6 +1312,22 @@
 
   .timeline-content {
     padding: 28px;
+  }
+
+  .timeline-header-section {
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+  }
+
+  .add-timeline-button {
+    width: 100%;
+  }
+
+  .timeline-delete-btn {
+    opacity: 1;
+    top: 15px;
+    right: 15px;
   }
 
   .gallery-grid {
