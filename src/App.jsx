@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import './App.css'
 import { supabase } from './supabaseClient'
 
@@ -19,6 +19,12 @@ function App() {
   const [notes, setNotes] = useState([])
   const [newNote, setNewNote] = useState('')
   const [showNotesModal, setShowNotesModal] = useState(false)
+  const [currentNotesPage, setCurrentNotesPage] = useState(1)
+  const notesPerPage = 5
+  const [currentPlacesPage, setCurrentPlacesPage] = useState(1)
+  const placesPerPage = 4
+  const [currentPhotosPage, setCurrentPhotosPage] = useState(1)
+  const photosPerPage = 6
   const [timelineEvents, setTimelineEvents] = useState([])
   const [showTimelineModal, setShowTimelineModal] = useState(false)
   const [timelineForm, setTimelineForm] = useState({
@@ -27,6 +33,15 @@ function App() {
     date: '',
     description: ''
   })
+  const [visitedPlaces, setVisitedPlaces] = useState([])
+  const [showMapModal, setShowMapModal] = useState(false)
+  const [mapForm, setMapForm] = useState({
+    name: '',
+    description: ''
+  })
+  const [dailyAffections, setDailyAffections] = useState([])
+  const [todayDate, setTodayDate] = useState(new Date().toISOString().split('T')[0])
+  
   
   // Sadece yüklenen fotoğraflar
   const photos = uploadedPhotos
@@ -80,6 +95,7 @@ function App() {
       if (uploadError) throw uploadError
 
       await fetchPhotos()
+      setCurrentPhotosPage(1) // Yeni fotoğraf yüklendiğinde ilk sayfaya dön
       setShowUploadModal(false)
       alert('Fotoğraf başarıyla yüklendi! 💕')
     } catch (error) {
@@ -106,6 +122,11 @@ function App() {
       if (error) throw error
 
       await fetchPhotos()
+      // Eğer son sayfada tek fotoğraf varsa ve silinirse bir önceki sayfaya geç
+      const totalPages = Math.ceil((photos.length - 1) / photosPerPage)
+      if (currentPhotosPage > totalPages && totalPages > 0) {
+        setCurrentPhotosPage(totalPages)
+      }
       setLightboxImage(null)
       alert('Fotoğraf silindi! 🗑️')
     } catch (error) {
@@ -129,8 +150,28 @@ function App() {
     if (isAuthenticated) {
       fetchNotes()
       fetchTimelineEvents()
+      fetchVisitedPlaces()
+      fetchDailyAffections()
     }
   }, [isAuthenticated])
+
+  // Her gün başında tarihi kontrol et
+  useEffect(() => {
+    const checkNewDay = () => {
+      const today = new Date().toISOString().split('T')[0]
+      if (today !== todayDate) {
+        setTodayDate(today)
+        if (isAuthenticated) {
+          fetchDailyAffections()
+        }
+      }
+    }
+    
+    const interval = setInterval(checkNewDay, 60000) // Her dakika kontrol et
+    checkNewDay()
+    
+    return () => clearInterval(interval)
+  }, [todayDate, isAuthenticated])
 
   const fetchNotes = async () => {
     try {
@@ -159,6 +200,181 @@ function App() {
     } catch (error) {
       console.error('Timeline yüklenemedi:', error)
     }
+  }
+
+  // Ziyaret edilen yerleri çek
+  const fetchVisitedPlaces = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('visited_places')
+        .select('*')
+        .order('created_at', { ascending: false })
+
+      if (error) throw error
+      setVisitedPlaces(data || [])
+    } catch (error) {
+      console.error('Yerler yüklenemedi:', error)
+    }
+  }
+
+  // Harita yeri ekleme
+  const handleAddPlace = async (e) => {
+    e.preventDefault()
+    
+    if (!mapForm.name) {
+      alert('Yer adı gerekli! 💔')
+      return
+    }
+
+    try {
+      const { error } = await supabase
+        .from('visited_places')
+        .insert([
+          {
+            name: mapForm.name,
+            description: mapForm.description || '',
+            username: currentUser.username
+          }
+        ])
+
+      if (error) throw error
+
+      setMapForm({ name: '', description: '' })
+      await fetchVisitedPlaces()
+      setCurrentPlacesPage(1) // Yeni yer eklendiğinde ilk sayfaya dön
+      setShowMapModal(false)
+      alert('Yer eklendi! 💕')
+    } catch (error) {
+      console.error('Yer ekleme hatası:', error)
+      alert('Yer eklenirken hata oluştu 😔')
+    }
+  }
+
+  // Harita yeri silme
+  const handleDeletePlace = async (placeId) => {
+    const confirmDelete = window.confirm('Bu yeri silmek istediğinizden emin misiniz? 🗑️')
+    if (!confirmDelete) return
+
+    try {
+      const { error } = await supabase
+        .from('visited_places')
+        .delete()
+        .eq('id', placeId)
+
+      if (error) throw error
+
+      await fetchVisitedPlaces()
+      // Eğer son sayfada tek yer varsa ve silinirse bir önceki sayfaya geç
+      const totalPages = Math.ceil((visitedPlaces.length - 1) / placesPerPage)
+      if (currentPlacesPage > totalPages && totalPages > 0) {
+        setCurrentPlacesPage(totalPages)
+      }
+      alert('Yer silindi! 🗑️')
+    } catch (error) {
+      console.error('Yer silme hatası:', error)
+      alert('Yer silinirken hata oluştu 😔')
+    }
+  }
+
+  // Günlük affections çek
+  const fetchDailyAffections = async () => {
+    try {
+      const today = new Date().toISOString().split('T')[0]
+      const { data, error } = await supabase
+        .from('daily_affections')
+        .select('*')
+        .eq('date', today)
+        .order('created_at', { ascending: true })
+
+      if (error) throw error
+      setDailyAffections(data || [])
+    } catch (error) {
+      console.error('Affections yüklenemedi:', error)
+    }
+  }
+
+  // Affection ekleme
+  const handleAddAffection = async (type) => {
+    if (!currentUser) return
+
+    try {
+      const today = new Date().toISOString().split('T')[0]
+      const userColor = currentUser.username === 'baha' ? 'blue' : 'pink'
+
+      const { error } = await supabase
+        .from('daily_affections')
+        .insert([
+          {
+            date: today,
+            type: type,
+            username: currentUser.username,
+            color: userColor
+          }
+        ])
+
+      if (error) throw error
+
+      await fetchDailyAffections()
+    } catch (error) {
+      console.error('Affection ekleme hatası:', error)
+      alert('Eklenirken hata oluştu 😔')
+    }
+  }
+
+  // Oranlı top gösterimi için helper fonksiyon
+  const getProportionalBalls = (affections, type, maxBalls = 100) => {
+    const filtered = affections.filter(a => a.type === type)
+    const total = filtered.length
+    
+    if (total <= maxBalls) {
+      // Tarih sırasına göre sırala (en eskiden yeniye)
+      return [...filtered].sort((a, b) => new Date(a.created_at) - new Date(b.created_at))
+    }
+    
+    const bahaBalls = filtered.filter(a => a.username === 'baha')
+    const aysenurBalls = filtered.filter(a => a.username === 'aysenur')
+    
+    const bahaCount = bahaBalls.length
+    const aysenurCount = aysenurBalls.length
+    
+    // Oranları hesapla
+    const bahaRatio = bahaCount / total
+    const aysenurRatio = aysenurCount / total
+    
+    // Gösterilecek top sayılarını hesapla
+    let bahaToShow = Math.round(maxBalls * bahaRatio)
+    let aysenurToShow = Math.round(maxBalls * aysenurRatio)
+    
+    // Toplam 100'e tamamlamak için
+    const totalToShow = bahaToShow + aysenurToShow
+    if (totalToShow < maxBalls) {
+      // Eksik kalan sayıyı daha fazla topu olan tarafa ekle
+      const remaining = maxBalls - totalToShow
+      if (bahaCount > aysenurCount) {
+        bahaToShow += remaining
+      } else {
+        aysenurToShow += remaining
+      }
+    } else if (totalToShow > maxBalls) {
+      // Fazla varsa azalt
+      const excess = totalToShow - maxBalls
+      if (bahaToShow > aysenurToShow) {
+        bahaToShow -= excess
+      } else {
+        aysenurToShow -= excess
+      }
+    }
+    
+    // Topları tarih sırasına göre sırala (en eskiden yeniye)
+    const sortedBaha = [...bahaBalls].sort((a, b) => new Date(a.created_at) - new Date(b.created_at))
+    const sortedAysenur = [...aysenurBalls].sort((a, b) => new Date(a.created_at) - new Date(b.created_at))
+    
+    // En son eklenenlerden başlayarak seç
+    const selectedBaha = sortedBaha.slice(-bahaToShow)
+    const selectedAysenur = sortedAysenur.slice(-aysenurToShow)
+    
+    // Sabit sırayla döndür (Baha topları önce, sonra Ayşenur topları, her biri kendi içinde tarih sırasında)
+    return [...selectedBaha, ...selectedAysenur].slice(0, maxBalls)
   }
 
   // Timeline olayı ekleme
@@ -324,6 +540,7 @@ function App() {
 
       setNewNote('')
       await fetchNotes()
+      setCurrentNotesPage(1) // Yeni not eklendiğinde ilk sayfaya dön
       alert('Not eklendi! 💕')
     } catch (error) {
       console.error('Not eklenirken hata:', error)
@@ -345,6 +562,11 @@ function App() {
       if (error) throw error
 
       await fetchNotes()
+      // Eğer son sayfada tek not varsa ve silinirse bir önceki sayfaya geç
+      const totalPages = Math.ceil((notes.length - 1) / notesPerPage)
+      if (currentNotesPage > totalPages && totalPages > 0) {
+        setCurrentNotesPage(totalPages)
+      }
       alert('Not silindi! 🗑️')
     } catch (error) {
       console.error('Not silinirken hata:', error)
@@ -543,7 +765,6 @@ function App() {
             <h2 className="gallery-title">
               <span className="title-decoration">✨</span>
               Anılarımız
-              <span className="title-decoration">✨</span>
             </h2>
             {currentUser?.role === 'admin' && (
               <button 
@@ -555,19 +776,63 @@ function App() {
             )}
           </div>
           <div className="gallery-grid">
-            {photos.map((photo, index) => (
-              <div 
-                key={index} 
-                className="photo-item"
-                onClick={() => setLightboxImage(photo)}
-              >
-                <img src={photo} alt={`Anımız ${index + 1}`} />
-                <div className="photo-overlay">
-                  <span className="overlay-text">💕</span>
-                </div>
-              </div>
-            ))}
+            {(() => {
+              const totalPages = Math.ceil(photos.length / photosPerPage)
+              const startIndex = (currentPhotosPage - 1) * photosPerPage
+              const endIndex = startIndex + photosPerPage
+              const currentPhotos = photos.slice(startIndex, endIndex)
+              
+              return (
+                <>
+                  {currentPhotos.map((photo, index) => {
+                    const globalIndex = startIndex + index
+                    return (
+                      <div 
+                        key={globalIndex} 
+                        className="photo-item"
+                        onClick={() => setLightboxImage(photo)}
+                      >
+                        <img src={photo} alt={`Anımız ${globalIndex + 1}`} />
+                        <div className="photo-overlay">
+                          <span className="overlay-text">💕</span>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </>
+              )
+            })()}
           </div>
+          
+          {/* Fotoğraf Sayfalama */}
+          {photos.length > photosPerPage && (
+            <div className="photos-pagination">
+              {(() => {
+                const totalPages = Math.ceil(photos.length / photosPerPage)
+                return (
+                  <>
+                    <button
+                      className="pagination-btn"
+                      onClick={() => setCurrentPhotosPage(prev => Math.max(1, prev - 1))}
+                      disabled={currentPhotosPage === 1}
+                    >
+                      ← Önceki
+                    </button>
+                    <span className="pagination-info">
+                      Sayfa {currentPhotosPage} / {totalPages}
+                    </span>
+                    <button
+                      className="pagination-btn"
+                      onClick={() => setCurrentPhotosPage(prev => Math.min(totalPages, prev + 1))}
+                      disabled={currentPhotosPage === totalPages}
+                    >
+                      Sonraki →
+                    </button>
+                  </>
+                )
+              })()}
+            </div>
+          )}
         </section>
 
         {/* Lightbox Modal */}
@@ -661,36 +926,72 @@ function App() {
                 )}
               </div>
             ) : (
-              notes.map((note) => (
-                <div 
-                  key={note.id} 
-                  className={`note-card ${note.author === 'baha' ? 'note-baha' : 'note-aysenur'}`}
-                >
-                  <div className="note-header-card">
-                    <span className="note-author">
-                      {note.author === 'baha' ? '💙 Baha' : '💕 Ayşenur'}
-                    </span>
-                    <span className="note-date">
-                      {new Date(note.created_at).toLocaleDateString('tr-TR', {
-                        day: 'numeric',
-                        month: 'long',
-                        year: 'numeric',
-                        hour: '2-digit',
-                        minute: '2-digit'
-                      })}
-                    </span>
-                  </div>
-                  <p className="note-message">{note.message}</p>
-                  {currentUser?.role === 'admin' && (
-                    <button 
-                      className="note-delete-btn"
-                      onClick={() => handleDeleteNote(note.id)}
-                    >
-                      🗑️
-                    </button>
-                  )}
-                </div>
-              ))
+              <>
+                {(() => {
+                  const totalPages = Math.ceil(notes.length / notesPerPage)
+                  const startIndex = (currentNotesPage - 1) * notesPerPage
+                  const endIndex = startIndex + notesPerPage
+                  const currentNotes = notes.slice(startIndex, endIndex)
+                  
+                  return (
+                    <>
+                      {currentNotes.map((note) => (
+                        <div 
+                          key={note.id} 
+                          className={`note-card ${note.author === 'baha' ? 'note-baha' : 'note-aysenur'}`}
+                        >
+                          <div className="note-header-card">
+                            <span className="note-author">
+                              {note.author === 'baha' ? '💙 Baha' : '💕 Ayşenur'}
+                            </span>
+                            <span className="note-date">
+                              {new Date(note.created_at).toLocaleDateString('tr-TR', {
+                                day: 'numeric',
+                                month: 'long',
+                                year: 'numeric',
+                                hour: '2-digit',
+                                minute: '2-digit'
+                              })}
+                            </span>
+                          </div>
+                          <p className="note-message">{note.message}</p>
+                          {currentUser?.role === 'admin' && (
+                            <button 
+                              className="note-delete-btn"
+                              onClick={() => handleDeleteNote(note.id)}
+                            >
+                              🗑️
+                            </button>
+                          )}
+                        </div>
+                      ))}
+                      
+                      {/* Sayfa Navigasyonu */}
+                      {totalPages > 1 && (
+                        <div className="notes-pagination">
+                          <button
+                            className="pagination-btn"
+                            onClick={() => setCurrentNotesPage(prev => Math.max(1, prev - 1))}
+                            disabled={currentNotesPage === 1}
+                          >
+                            ← Önceki
+                          </button>
+                          <span className="pagination-info">
+                            Sayfa {currentNotesPage} / {totalPages}
+                          </span>
+                          <button
+                            className="pagination-btn"
+                            onClick={() => setCurrentNotesPage(prev => Math.min(totalPages, prev + 1))}
+                            disabled={currentNotesPage === totalPages}
+                          >
+                            Sonraki →
+                          </button>
+                        </div>
+                      )}
+                    </>
+                  )
+                })()}
+              </>
             )}
           </div>
         </section>
@@ -724,30 +1025,269 @@ function App() {
           </div>
         )}
 
-        {/* Nedenler bölümü */}
-        <section className="reasons-section">
-          <h2 className="reasons-title">Seni Neden Seviyorum? ❤️</h2>
-          <div className="reasons-grid">
-            <div className="reason-card">
-              <div className="reason-icon">😊</div>
-              <h3>Gülüşün</h3>
-              <p>Gülümsemen tüm kötü günlerimi güzel yapıyor</p>
+        {/* Spotify Playlist Bölümü */}
+        <section className="spotify-section">
+          <h2 className="spotify-title">
+            <span className="title-decoration">🎵</span>
+            Bizim Müziklerimiz
+          </h2>
+          <div className="spotify-container">
+            <iframe
+              style={{ borderRadius: '12px' }}
+              src="https://open.spotify.com/embed/playlist/2vshuINzSOm7vXwdP8eeIR?utm_source=generator&theme=0"
+              width="100%"
+              height="352"
+              frameBorder="0"
+              allowFullScreen
+              allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture"
+              loading="lazy"
+              title="Bizim Müziklerimiz"
+            ></iframe>
+          </div>
+        </section>
+
+        {/* Günlük Kavanoz Bölümü */}
+        <section className="jar-section">
+          <h2 className="jar-title">
+            <span className="title-decoration">💕</span>
+            Aşk Kavanozu
+          </h2>
+          <div className="jars-container">
+            {/* Özeldim Kavanozu */}
+            <div className="jar-item">
+              <h3 className="jar-item-title">💙 Özeldim</h3>
+              <div className="jar">
+                <div className="jar-body">
+                  <div className="jar-balls-container">
+                    {getProportionalBalls(dailyAffections, 'ozeldim', 100)
+                      .map((affection, index) => {
+                        const cols = 10
+                        const row = Math.floor(index / cols)
+                        const col = index % cols
+                        const position = {
+                          left: `${5 + col * 9}%`,
+                          bottom: `${3 + row * 8}%`
+                        }
+                        return (
+                          <div
+                            key={`ozeldim-${affection.id}`}
+                            className={`jar-ball ${affection.color === 'blue' ? 'ball-blue' : 'ball-pink'}`}
+                            style={position}
+                          >
+                            💙
+                          </div>
+                        )
+                      })}
+                  </div>
+                </div>
+              </div>
+              {(currentUser?.username === 'baha' || currentUser?.username === 'aysenur') && (
+                <button 
+                  className="jar-button jar-button-ozeldim"
+                  onClick={() => handleAddAffection('ozeldim')}
+                >
+                  💙 Özledim
+                </button>
+              )}
+              <div className="jar-stats-container">
+                <div className="jar-stat-item">
+                  <span className="jar-stat-label">💙 Baha</span>
+                  <span className="jar-stat-number">{dailyAffections.filter(a => a.type === 'ozeldim' && a.username === 'baha').length}</span>
+                </div>
+                <div className="jar-stat-item">
+                  <span className="jar-stat-label">💕 Ayşenur</span>
+                  <span className="jar-stat-number">{dailyAffections.filter(a => a.type === 'ozeldim' && a.username === 'aysenur').length}</span>
+                </div>
+              </div>
             </div>
-            <div className="reason-card">
-              <div className="reason-icon">✨</div>
-              <h3>Enerjin</h3>
-              <p>Yanımda olduğunda hayat daha renkli</p>
+
+            {/* Öpücük Kavanozu */}
+            <div className="jar-item">
+              <h3 className="jar-item-title">💋 Öpücük</h3>
+              <div className="jar">
+                <div className="jar-body">
+                  <div className="jar-balls-container">
+                    {getProportionalBalls(dailyAffections, 'opucuk', 100)
+                      .map((affection, index) => {
+                        const cols = 10
+                        const row = Math.floor(index / cols)
+                        const col = index % cols
+                        const position = {
+                          left: `${5 + col * 9}%`,
+                          bottom: `${3 + row * 8}%`
+                        }
+                        return (
+                          <div
+                            key={`opucuk-${affection.id}`}
+                            className={`jar-ball ${affection.color === 'blue' ? 'ball-blue' : 'ball-pink'}`}
+                            style={position}
+                          >
+                            💋
+                          </div>
+                        )
+                      })}
+                  </div>
+                </div>
+              </div>
+              {(currentUser?.username === 'baha' || currentUser?.username === 'aysenur') && (
+                <button 
+                  className="jar-button jar-button-opucuk"
+                  onClick={() => handleAddAffection('opucuk')}
+                >
+                  💋 Öp
+                </button>
+              )}
+              <div className="jar-stats-container">
+                <div className="jar-stat-item">
+                  <span className="jar-stat-label">💙 Baha</span>
+                  <span className="jar-stat-number">{dailyAffections.filter(a => a.type === 'opucuk' && a.username === 'baha').length}</span>
+                </div>
+                <div className="jar-stat-item">
+                  <span className="jar-stat-label">💕 Ayşenur</span>
+                  <span className="jar-stat-number">{dailyAffections.filter(a => a.type === 'opucuk' && a.username === 'aysenur').length}</span>
+                </div>
+              </div>
             </div>
-            <div className="reason-card">
-              <div className="reason-icon">💖</div>
-              <h3>Kalbin</h3>
-              <p>İyiliğin ve sevgin sınır tanımıyor</p>
+
+            {/* Sarılma Kavanozu */}
+            <div className="jar-item">
+              <h3 className="jar-item-title">🤗 Sarılma</h3>
+              <div className="jar">
+                <div className="jar-body">
+                  <div className="jar-balls-container">
+                    {getProportionalBalls(dailyAffections, 'sarilma', 100)
+                      .map((affection, index) => {
+                        const cols = 10
+                        const row = Math.floor(index / cols)
+                        const col = index % cols
+                        const position = {
+                          left: `${5 + col * 9}%`,
+                          bottom: `${3 + row * 8}%`
+                        }
+                        return (
+                          <div
+                            key={`sarilma-${affection.id}`}
+                            className={`jar-ball ${affection.color === 'blue' ? 'ball-blue' : 'ball-pink'}`}
+                            style={position}
+                          >
+                            🤗
+                          </div>
+                        )
+                      })}
+                  </div>
+                </div>
+              </div>
+              {(currentUser?.username === 'baha' || currentUser?.username === 'aysenur') && (
+                <button 
+                  className="jar-button jar-button-sarilma"
+                  onClick={() => handleAddAffection('sarilma')}
+                >
+                  🤗 Sarıl
+                </button>
+              )}
+              <div className="jar-stats-container">
+                <div className="jar-stat-item">
+                  <span className="jar-stat-label">💙 Baha</span>
+                  <span className="jar-stat-number">{dailyAffections.filter(a => a.type === 'sarilma' && a.username === 'baha').length}</span>
+                </div>
+                <div className="jar-stat-item">
+                  <span className="jar-stat-label">💕 Ayşenur</span>
+                  <span className="jar-stat-number">{dailyAffections.filter(a => a.type === 'sarilma' && a.username === 'aysenur').length}</span>
+                </div>
+              </div>
             </div>
-            <div className="reason-card">
-              <div className="reason-icon">🌟</div>
-              <h3>Sen Sensin</h3>
-              <p>Olduğun gibisin ve bu seni mükemmel yapıyor</p>
-            </div>
+          </div>
+        </section>
+
+        {/* Harita Bölümü */}
+        <section className="map-section">
+          <div className="map-header-section">
+            <h2 className="map-title">
+              <span className="title-decoration">🗺️</span>
+              Birlikte Gittiğimiz Yerler
+            </h2>
+            {currentUser?.role === 'admin' && (
+              <button 
+                className="add-map-button"
+                onClick={() => setShowMapModal(true)}
+              >
+                📍 Yer Ekle
+              </button>
+            )}
+          </div>
+          <div className="places-list-container">
+            {visitedPlaces.length === 0 ? (
+              <div className="no-places">
+                <p>Henüz yer eklenmemiş 💭</p>
+                {currentUser?.role === 'admin' && (
+                  <p className="map-hint">İlk yerinizi ekleyin!</p>
+                )}
+              </div>
+            ) : (
+              <>
+                {(() => {
+                  const totalPages = Math.ceil(visitedPlaces.length / placesPerPage)
+                  const startIndex = (currentPlacesPage - 1) * placesPerPage
+                  const endIndex = startIndex + placesPerPage
+                  const currentPlaces = visitedPlaces.slice(startIndex, endIndex)
+                  
+                  return (
+                    <>
+                      <div className="places-list">
+                        {currentPlaces.map((place) => (
+                          <div key={place.id} className="place-card">
+                            <div className="place-card-content">
+                              <h3 className="place-name">📍 {place.name}</h3>
+                              {place.description && (
+                                <p className="place-description">{place.description}</p>
+                              )}
+                              <span className="place-date">
+                                {new Date(place.created_at).toLocaleDateString('tr-TR', {
+                                  day: 'numeric',
+                                  month: 'long',
+                                  year: 'numeric'
+                                })}
+                              </span>
+                            </div>
+                            {currentUser?.role === 'admin' && (
+                              <button 
+                                className="place-delete-btn"
+                                onClick={() => handleDeletePlace(place.id)}
+                              >
+                                🗑️
+                              </button>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                      
+                      {/* Sayfa Navigasyonu */}
+                      {totalPages > 1 && (
+                        <div className="places-pagination">
+                          <button
+                            className="pagination-btn"
+                            onClick={() => setCurrentPlacesPage(prev => Math.max(1, prev - 1))}
+                            disabled={currentPlacesPage === 1}
+                          >
+                            ← Önceki
+                          </button>
+                          <span className="pagination-info">
+                            Sayfa {currentPlacesPage} / {totalPages}
+                          </span>
+                          <button
+                            className="pagination-btn"
+                            onClick={() => setCurrentPlacesPage(prev => Math.min(totalPages, prev + 1))}
+                            disabled={currentPlacesPage === totalPages}
+                          >
+                            Sonraki →
+                          </button>
+                        </div>
+                      )}
+                    </>
+                  )
+                })()}
+              </>
+            )}
           </div>
         </section>
 
@@ -896,6 +1436,47 @@ function App() {
               <div className="upload-hint">
                 💡 JPG, PNG veya JPEG formatında olmalı
               </div>
+            </div>
+          </div>
+        )}
+
+        {/* Harita Yer Ekleme Modal */}
+        {showMapModal && currentUser?.role === 'admin' && (
+          <div className="upload-modal-overlay" onClick={() => setShowMapModal(false)}>
+            <div className="upload-modal map-modal" onClick={(e) => e.stopPropagation()}>
+              <button 
+                className="upload-modal-close" 
+                onClick={() => setShowMapModal(false)}
+              >
+                ✕
+              </button>
+              <h2>Yer Ekle 📍</h2>
+              <p>Birlikte gittiğiniz özel bir yeri haritaya ekleyin!</p>
+              <form onSubmit={handleAddPlace} className="map-form">
+                <div className="input-group">
+                  <label>Yer Adı</label>
+                  <input
+                    type="text"
+                    value={mapForm.name}
+                    onChange={(e) => setMapForm({...mapForm, name: e.target.value})}
+                    placeholder="Örn: İstanbul, Kapadokya"
+                    required
+                  />
+                </div>
+                <div className="input-group">
+                  <label>Açıklama (Opsiyonel)</label>
+                  <textarea
+                    value={mapForm.description}
+                    onChange={(e) => setMapForm({...mapForm, description: e.target.value})}
+                    placeholder="Bu yer hakkında bir şeyler yazın..."
+                    className="note-textarea"
+                    rows="3"
+                  />
+                </div>
+                <button type="submit" className="login-button">
+                  💕 Yer Ekle
+                </button>
+              </form>
             </div>
           </div>
         )}
