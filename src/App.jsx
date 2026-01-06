@@ -2,6 +2,17 @@ import { useState, useEffect, useMemo } from 'react'
 import './App.css'
 import { supabase } from './supabaseClient'
 
+// Türkiye saati (UTC+3) için bugünün tarihini döndürür
+const getTurkeyDateString = () => {
+  const now = new Date()
+  // Türkiye saatini (Europe/Istanbul) kullanarak tarihi al
+  const turkeyDate = new Date(now.toLocaleString('en-US', { timeZone: 'Europe/Istanbul' }))
+  const year = turkeyDate.getFullYear()
+  const month = String(turkeyDate.getMonth() + 1).padStart(2, '0')
+  const day = String(turkeyDate.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
 function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false)
   const [currentUser, setCurrentUser] = useState(null)
@@ -41,10 +52,10 @@ function App() {
   const [mapForm, setMapForm] = useState({
     name: '',
     description: '',
-    date: new Date().toISOString().split('T')[0]
+    date: getTurkeyDateString()
   })
   const [dailyAffections, setDailyAffections] = useState([])
-  const [todayDate, setTodayDate] = useState(new Date().toISOString().split('T')[0])
+  const [todayDate, setTodayDate] = useState(getTurkeyDateString())
   const [isDragging, setIsDragging] = useState(false)
   const [draggedIndex, setDraggedIndex] = useState(null)
   const [touchStartY, setTouchStartY] = useState(null)
@@ -481,7 +492,7 @@ function App() {
   // Her gün başında tarihi kontrol et
   useEffect(() => {
     const checkNewDay = () => {
-      const today = new Date().toISOString().split('T')[0]
+      const today = getTurkeyDateString()
       if (today !== todayDate) {
         setTodayDate(today)
         if (isAuthenticated) {
@@ -580,7 +591,7 @@ function App() {
         alert('Yer eklendi! 💕')
       }
 
-      setMapForm({ name: '', description: '', date: new Date().toISOString().split('T')[0] })
+      setMapForm({ name: '', description: '', date: getTurkeyDateString() })
       setEditingPlace(null)
       await fetchVisitedPlaces()
       setCurrentPlacesPage(1)
@@ -631,7 +642,7 @@ function App() {
   // Günlük affections çek
   const fetchDailyAffections = async () => {
     try {
-      const today = new Date().toISOString().split('T')[0]
+      const today = getTurkeyDateString()
       const { data, error } = await supabase
         .from('daily_affections')
         .select('*')
@@ -650,7 +661,7 @@ function App() {
     if (!currentUser) return
 
     try {
-      const today = new Date().toISOString().split('T')[0]
+      const today = getTurkeyDateString()
       const userColor = currentUser.username === 'baha' ? 'blue' : 'pink'
 
       const { error } = await supabase
@@ -1543,9 +1554,9 @@ function App() {
             Aşk Kavanozu
           </h2>
           <div className="jars-container">
-            {/* Özeldim Kavanozu */}
+            {/* Özledim Kavanozu */}
             <div className="jar-item">
-              <h3 className="jar-item-title">💙 Özeldim</h3>
+              <h3 className="jar-item-title">💙 Özledim</h3>
               <div className="jar">
                 <div className="jar-body">
                   <div className="jar-balls-container">
@@ -1702,7 +1713,7 @@ function App() {
                   className="add-map-button"
                   onClick={() => {
                     setEditingPlace(null)
-                    setMapForm({ name: '', description: '', date: new Date().toISOString().split('T')[0] })
+                    setMapForm({ name: '', description: '', date: getTurkeyDateString() })
                     setShowMapModal(true)
                   }}
                 >
@@ -1987,7 +1998,7 @@ function App() {
           <div className="upload-modal-overlay" onClick={() => {
             setShowMapModal(false)
             setEditingPlace(null)
-            setMapForm({ name: '', description: '', date: new Date().toISOString().split('T')[0] })
+            setMapForm({ name: '', description: '', date: getTurkeyDateString() })
           }}>
             <div className="upload-modal map-modal" onClick={(e) => e.stopPropagation()}>
               <button 
@@ -1995,7 +2006,7 @@ function App() {
                 onClick={() => {
                   setShowMapModal(false)
                   setEditingPlace(null)
-                  setMapForm({ name: '', description: '', date: new Date().toISOString().split('T')[0] })
+                  setMapForm({ name: '', description: '', date: getTurkeyDateString() })
                 }}
               >
                 ✕
@@ -2029,7 +2040,7 @@ function App() {
                     type="date"
                     value={mapForm.date}
                     onChange={(e) => setMapForm({...mapForm, date: e.target.value})}
-                    max={new Date().toISOString().split('T')[0]}
+                    max={getTurkeyDateString()}
                     required
                   />
                 </div>
