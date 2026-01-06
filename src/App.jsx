@@ -28,11 +28,26 @@ function App() {
   const [showUploadModal, setShowUploadModal] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [notes, setNotes] = useState([])
+  const [audioNotes, setAudioNotes] = useState([])
   const [newNote, setNewNote] = useState('')
   const [showNotesModal, setShowNotesModal] = useState(false)
+  const [showAudioNotesModal, setShowAudioNotesModal] = useState(false)
   const [editingNote, setEditingNote] = useState(null)
+  const [editingAudioNote, setEditingAudioNote] = useState(null)
+  const [isRecording, setIsRecording] = useState(false)
+  const [mediaRecorder, setMediaRecorder] = useState(null)
+  const [audioChunks, setAudioChunks] = useState([])
+  const [recordingTime, setRecordingTime] = useState(0)
+  const [isPlayingAudio, setIsPlayingAudio] = useState(null)
+  const [audioNoteTitle, setAudioNoteTitle] = useState('')
+  const [audioProgress, setAudioProgress] = useState({})
+  const [audioDuration, setAudioDuration] = useState({})
+  const [recordingStream, setRecordingStream] = useState(null)
+  const [recordingTimer, setRecordingTimer] = useState(null)
   const [currentNotesPage, setCurrentNotesPage] = useState(1)
   const notesPerPage = 4
+  const [currentAudioNotesPage, setCurrentAudioNotesPage] = useState(1)
+  const audioNotesPerPage = 4
   const [currentPlacesPage, setCurrentPlacesPage] = useState(1)
   const placesPerPage = 4
   const [currentPhotosPage, setCurrentPhotosPage] = useState(1)
@@ -517,6 +532,7 @@ function App() {
   useEffect(() => {
     if (isAuthenticated) {
       fetchNotes()
+      fetchAudioNotes()
       fetchTimelineEvents()
       fetchVisitedPlaces()
       fetchDailyAffections()
@@ -543,15 +559,66 @@ function App() {
 
   const fetchNotes = async () => {
     try {
+      // Tüm notları çek ve client-side'da filtrele
       const { data, error } = await supabase
         .from('love_notes')
         .select('*')
         .order('created_at', { ascending: false })
 
       if (error) throw error
-      setNotes(data || [])
+      
+      // Sadece metin notları (message var, audio_url yok veya boş, deleted değil)
+      const textNotes = (data || []).filter(note => 
+        note.message && 
+        (!note.audio_url || note.audio_url === '' || note.audio_url === null) &&
+        (!note.deleted || note.deleted === false)
+      )
+      setNotes(textNotes)
     } catch (error) {
       console.error('Notlar yüklenemedi:', error)
+      alert('Notlar yüklenirken hata oluştu: ' + error.message)
+    }
+  }
+
+  const fetchAudioNotes = async () => {
+    try {
+      // Sesli notlar tablosundan çek
+      const { data, error } = await supabase
+        .from('audio_notes')
+        .select('*')
+        .order('created_at', { ascending: false })
+
+      if (error) {
+        // Eğer tablo yoksa eski sistemden çek
+        if (error.code === 'PGRST116' || error.message?.includes('does not exist')) {
+          console.warn('audio_notes tablosu bulunamadı, love_notes tablosundan çekiliyor...')
+          const { data: oldData, error: oldError } = await supabase
+            .from('love_notes')
+            .select('*')
+            .order('created_at', { ascending: false })
+          
+          if (oldError) throw oldError
+          
+          // Sadece sesli notlar (audio_url var ve deleted değil)
+          const audioOnlyNotes = (oldData || []).filter(note => 
+            note.audio_url && (!note.deleted || note.deleted === false)
+          )
+          setAudioNotes(audioOnlyNotes)
+          return
+        }
+        throw error
+      }
+      
+      // Sadece silinmemiş olanları filtrele
+      const activeAudioNotes = (data || []).filter(note => 
+        !note.deleted || note.deleted === false
+      )
+      setAudioNotes(activeAudioNotes)
+      console.log('Sesli notlar yüklendi:', activeAudioNotes.length, 'adet')
+    } catch (error) {
+      console.error('Sesli notlar yüklenemedi:', error)
+      // Hata durumunda boş array set et
+      setAudioNotes([])
     }
   }
 
@@ -564,7 +631,11 @@ function App() {
         .order('order_index', { ascending: true })
 
       if (error) throw error
-      setTimelineEvents(data || [])
+      // Sadece silinmemiş olanları filtrele
+      const activeEvents = (data || []).filter(event => 
+        !event.deleted || event.deleted === false
+      )
+      setTimelineEvents(activeEvents)
     } catch (error) {
       console.error('Timeline yüklenemedi:', error)
     }
@@ -579,7 +650,11 @@ function App() {
         .order('created_at', { ascending: false })
 
       if (error) throw error
-      setVisitedPlaces(data || [])
+      // Sadece silinmemiş olanları filtrele
+      const activePlaces = (data || []).filter(place => 
+        !place.deleted || place.deleted === false
+      )
+      setVisitedPlaces(activePlaces)
     } catch (error) {
       console.error('Yerler yüklenemedi:', error)
     }
@@ -647,7 +722,7 @@ function App() {
     setShowMapModal(true)
   }
 
-  // Harita yeri silme
+  // Harita yeri silme (soft delete)
   const handleDeletePlace = async (placeId) => {
     const confirmDelete = window.confirm('Bu yeri silmek istediğinizden emin misiniz? 🗑️')
     if (!confirmDelete) return
@@ -655,7 +730,7 @@ function App() {
     try {
       const { error } = await supabase
         .from('visited_places')
-        .delete()
+        .update({ deleted: true })
         .eq('id', placeId)
 
       if (error) throw error
@@ -842,7 +917,7 @@ function App() {
     setShowTimelineModal(true)
   }
 
-  // Timeline olayı silme
+  // Timeline olayı silme (soft delete)
   const handleDeleteTimeline = async (eventId) => {
     const confirmDelete = window.confirm('Bu olayı silmek istediğinizden emin misiniz? 🗑️')
     if (!confirmDelete) return
@@ -850,7 +925,7 @@ function App() {
     try {
       const { error } = await supabase
         .from('timeline_events')
-        .delete()
+        .update({ deleted: true })
         .eq('id', eventId)
 
       if (error) throw error
@@ -948,10 +1023,108 @@ function App() {
     setPassword('')
   }
 
-  // Not ekleme/güncelleme
+  // Ses kaydetmeye başla
+  const startRecording = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      const recorder = new MediaRecorder(stream)
+      const chunks = []
+
+      recorder.ondataavailable = (e) => {
+        if (e.data.size > 0) {
+          chunks.push(e.data)
+        }
+      }
+
+      recorder.onstop = () => {
+        if (recordingTimer) clearInterval(recordingTimer)
+        setAudioChunks([...chunks])
+        if (recordingStream) {
+          recordingStream.getTracks().forEach(track => track.stop())
+        }
+      }
+
+      recorder.start()
+      setMediaRecorder(recorder)
+      setRecordingStream(stream)
+      setIsRecording(true)
+      setRecordingTime(0)
+      setAudioChunks([])
+
+      // Zamanlayıcı başlat
+      const timer = setInterval(() => {
+        setRecordingTime(prev => prev + 1)
+      }, 1000)
+      setRecordingTimer(timer)
+    } catch (error) {
+      console.error('Mikrofon erişim hatası:', error)
+      alert('Mikrofon erişimi reddedildi. Lütfen tarayıcı ayarlarından mikrofon iznini verin. 🎤')
+    }
+  }
+
+  // Ses kaydını durdur
+  const stopRecording = () => {
+    if (mediaRecorder && isRecording) {
+      mediaRecorder.stop()
+      setIsRecording(false)
+      if (recordingTimer) {
+        clearInterval(recordingTimer)
+        setRecordingTimer(null)
+      }
+    }
+  }
+
+  // Ses kaydını iptal et
+  const cancelRecording = () => {
+    if (mediaRecorder && isRecording) {
+      mediaRecorder.stop()
+    }
+    if (recordingStream) {
+      recordingStream.getTracks().forEach(track => track.stop())
+      setRecordingStream(null)
+    }
+    if (recordingTimer) {
+      clearInterval(recordingTimer)
+      setRecordingTimer(null)
+    }
+    setIsRecording(false)
+    setAudioChunks([])
+    setRecordingTime(0)
+    setMediaRecorder(null)
+  }
+
+  // Ses dosyasını yükle ve not ekle
+  const handleAddNoteWithAudio = async (audioBlob) => {
+    try {
+      // Ses dosyasını Supabase Storage'a yükle
+      const fileName = `audio_${Date.now()}_${Math.random().toString(36).substring(7)}.webm`
+      const { error: uploadError } = await supabase.storage
+        .from('love-photos')
+        .upload(`audio/${fileName}`, audioBlob, {
+          contentType: 'audio/webm'
+        })
+
+      if (uploadError) throw uploadError
+
+      // Ses dosyasının URL'ini al
+      const { data: urlData } = supabase.storage
+        .from('love-photos')
+        .getPublicUrl(`audio/${fileName}`)
+
+      return urlData.publicUrl
+    } catch (error) {
+      console.error('Ses yükleme hatası:', error)
+      throw error
+    }
+  }
+
+  // Metin notu ekleme/güncelleme
   const handleAddNote = async (e) => {
     e.preventDefault()
-    if (!newNote.trim()) return
+    if (!newNote.trim()) {
+      alert('Lütfen bir mesaj yazın! 💔')
+      return
+    }
 
     try {
       if (editingNote) {
@@ -966,17 +1139,25 @@ function App() {
         if (error) throw error
         alert('Not güncellendi! 💕')
       } else {
-        // Yeni ekleme
-        const { error } = await supabase
+        // Yeni ekleme (sadece metin, audio_url yok)
+        const { data, error } = await supabase
           .from('love_notes')
           .insert([
             {
               author: currentUser.username,
-              message: newNote.trim()
+              message: newNote.trim(),
+              audio_url: null
             }
           ])
+          .select()
 
-        if (error) throw error
+        if (error) {
+          console.error('Not ekleme hatası:', error)
+          console.error('Hata detayları:', JSON.stringify(error, null, 2))
+          throw error
+        }
+        
+        console.log('Not başarıyla eklendi:', data)
         alert('Not eklendi! 💕')
       }
 
@@ -987,18 +1168,108 @@ function App() {
       setShowNotesModal(false)
     } catch (error) {
       console.error('Not işlemi hatası:', error)
-      alert('İşlem sırasında hata oluştu 😔')
+      console.error('Hata detayları:', JSON.stringify(error, null, 2))
+      const errorMessage = error.message || error.code || error.hint || 'Bilinmeyen hata'
+      alert(`Not eklenirken hata oluştu: ${errorMessage}\n\nLütfen konsolu kontrol edin (F12) 😔`)
+    }
+  }
+
+  // Sesli not ekleme/güncelleme
+  const handleAddAudioNote = async (e) => {
+    e.preventDefault()
+    
+    if (audioChunks.length === 0) {
+      alert('Lütfen bir ses kaydı yapın! 💔')
+      return
+    }
+
+    try {
+      // Ses dosyasını yükle
+      const audioBlob = new Blob(audioChunks, { type: 'audio/webm' })
+      const audioUrl = await handleAddNoteWithAudio(audioBlob)
+
+      if (editingAudioNote) {
+        // Güncelleme - önce yeni tabloyu dene
+        let { error } = await supabase
+          .from('audio_notes')
+          .update({
+            audio_url: audioUrl,
+            title: audioNoteTitle.trim() || null
+          })
+          .eq('id', editingAudioNote)
+
+        // Eğer tablo yoksa eski tabloyu kullan
+        if (error && (error.code === 'PGRST116' || error.message?.includes('does not exist'))) {
+          const { error: oldError } = await supabase
+            .from('love_notes')
+            .update({
+              audio_url: audioUrl
+            })
+            .eq('id', editingAudioNote)
+          
+          if (oldError) throw oldError
+        } else if (error) {
+          throw error
+        }
+        
+        alert('Sesli not güncellendi! 💕')
+      } else {
+        // Yeni ekleme - önce yeni tabloyu dene
+        let { error } = await supabase
+          .from('audio_notes')
+          .insert([
+            {
+              author: currentUser.username,
+              audio_url: audioUrl,
+              title: audioNoteTitle.trim() || null
+            }
+          ])
+
+        // Eğer tablo yoksa eski tabloyu kullan
+        if (error && (error.code === 'PGRST116' || error.message?.includes('does not exist'))) {
+          const { error: oldError } = await supabase
+            .from('love_notes')
+            .insert([
+              {
+                author: currentUser.username,
+                message: null,
+                audio_url: audioUrl
+              }
+            ])
+          
+          if (oldError) throw oldError
+        } else if (error) {
+          throw error
+        }
+        
+        alert('Sesli not eklendi! 💕')
+      }
+
+      setAudioChunks([])
+      setRecordingTime(0)
+      setAudioNoteTitle('')
+      setEditingAudioNote(null)
+      await fetchAudioNotes()
+      setCurrentAudioNotesPage(1)
+      setShowAudioNotesModal(false)
+    } catch (error) {
+      console.error('Sesli not işlemi hatası:', error)
+      const errorMessage = error.message || error.code || 'Bilinmeyen hata'
+      alert(`Sesli not eklenirken hata oluştu: ${errorMessage}\n\nLütfen konsolu kontrol edin (F12) 😔`)
     }
   }
 
   // Not düzenleme modalını aç
   const handleEditNote = (note) => {
     setEditingNote(note.id)
-    setNewNote(note.message)
+    setNewNote(note.message || '')
+    setAudioChunks([])
+    setRecordingTime(0)
+    setIsRecording(false)
     setShowNotesModal(true)
   }
 
-  // Not silme
+  // Not silme (soft delete)
   const handleDeleteNote = async (noteId) => {
     const confirmDelete = window.confirm('Bu notu silmek istediğinizden emin misiniz? 🗑️')
     if (!confirmDelete) return
@@ -1006,7 +1277,7 @@ function App() {
     try {
       const { error } = await supabase
         .from('love_notes')
-        .delete()
+        .update({ deleted: true })
         .eq('id', noteId)
 
       if (error) throw error
@@ -1022,6 +1293,51 @@ function App() {
       console.error('Not silinirken hata:', error)
       alert('Not silinirken hata oluştu 😔')
     }
+  }
+
+  // Sesli not silme (soft delete)
+  const handleDeleteAudioNote = async (noteId) => {
+    const confirmDelete = window.confirm('Bu sesli notu silmek istediğinizden emin misiniz? 🗑️')
+    if (!confirmDelete) return
+
+    try {
+      // Önce yeni tabloyu dene
+      let { error } = await supabase
+        .from('audio_notes')
+        .update({ deleted: true })
+        .eq('id', noteId)
+
+      // Eğer tablo yoksa eski tabloyu kullan
+      if (error && (error.code === 'PGRST116' || error.message?.includes('does not exist'))) {
+        const { error: oldError } = await supabase
+          .from('love_notes')
+          .update({ deleted: true })
+          .eq('id', noteId)
+        
+        if (oldError) throw oldError
+      } else if (error) {
+        throw error
+      }
+
+      await fetchAudioNotes()
+      // Eğer son sayfada tek not varsa ve silinirse bir önceki sayfaya geç
+      const totalPages = Math.ceil((audioNotes.length - 1) / audioNotesPerPage)
+      if (currentAudioNotesPage > totalPages && totalPages > 0) {
+        setCurrentAudioNotesPage(totalPages)
+      }
+      alert('Sesli not silindi! 🗑️')
+    } catch (error) {
+      console.error('Sesli not silinirken hata:', error)
+      alert('Sesli not silinirken hata oluştu 😔')
+    }
+  }
+
+  // Ses süresini formatla (dakika:saniye)
+  const formatTime = (seconds) => {
+    if (!seconds || isNaN(seconds)) return '0:00'
+    const mins = Math.floor(seconds / 60)
+    const secs = Math.floor(seconds % 60)
+    return `${mins}:${secs.toString().padStart(2, '0')}`
   }
 
   // Rastgele kalpler oluştur
@@ -1544,6 +1860,195 @@ function App() {
           </div>
         </section>
 
+        {/* Sesli Notlar Bölümü */}
+        <section className="notes-section audio-notes-section">
+          <div className="notes-header">
+            <h2 className="notes-title">
+              <span style={{ animation: 'none' }}>🎤</span>
+              Sesli Notlarımız
+            </h2>
+            {currentUser?.role === 'admin' && (
+              <div className="notes-actions">
+                <button 
+                  className="add-note-button"
+                  onClick={() => {
+                    setEditingAudioNote(null)
+                    setAudioNoteTitle('')
+                    setAudioChunks([])
+                    setRecordingTime(0)
+                    setIsRecording(false)
+                    setShowAudioNotesModal(true)
+                  }}
+                >
+                  🎤 Sesli Not Ekle
+                </button>
+                <button 
+                  className="edit-notes-button"
+                  onClick={() => setEditingAudioNote(editingAudioNote ? null : 'all')}
+                >
+                  {editingAudioNote === 'all' ? '✅ Bitti' : '✏️ Düzenle'}
+                </button>
+              </div>
+            )}
+          </div>
+          
+          <div className="notes-container">
+            {audioNotes.length === 0 ? (
+              <div className="no-notes">
+                <p>Henüz sesli not eklenmemiş 💭</p>
+                {currentUser?.role === 'admin' && (
+                  <p className="note-hint">İlk sesli notu siz ekleyin!</p>
+                )}
+              </div>
+            ) : (
+              <>
+                {(() => {
+                  const totalPages = Math.ceil(audioNotes.length / audioNotesPerPage)
+                  const startIndex = (currentAudioNotesPage - 1) * audioNotesPerPage
+                  const endIndex = startIndex + audioNotesPerPage
+                  const currentAudioNotes = audioNotes.slice(startIndex, endIndex)
+                  
+                  return (
+                    <>
+                      {currentAudioNotes.map((note) => (
+                <div 
+                  key={note.id} 
+                  className={`note-card audio-note-card ${note.author === 'baha' ? 'note-baha' : 'note-aysenur'}`}
+                >
+                  <div className="note-header-card">
+                    <span className="note-author">
+                      {note.author === 'baha' ? '💙 Baha' : '💕 Ayşenur'}
+                    </span>
+                    <span className="note-date">
+                      {new Date(note.created_at).toLocaleDateString('tr-TR', {
+                        day: 'numeric',
+                        month: 'long',
+                        year: 'numeric',
+                        hour: '2-digit',
+                        minute: '2-digit'
+                      })}
+                    </span>
+                  </div>
+                  {note.title && (
+                    <h3 className="audio-note-title">{note.title}</h3>
+                  )}
+                  {note.audio_url && (
+                    <div className="audio-note-container">
+                      <audio 
+                        id={`audio-${note.id}`}
+                        src={note.audio_url}
+                        preload="metadata"
+                        onLoadedMetadata={(e) => {
+                          const duration = e.target.duration
+                          setAudioDuration(prev => ({ ...prev, [note.id]: duration }))
+                        }}
+                        onTimeUpdate={(e) => {
+                          const currentTime = e.target.currentTime
+                          setAudioProgress(prev => ({ ...prev, [note.id]: currentTime }))
+                        }}
+                        onEnded={() => {
+                          setIsPlayingAudio(null)
+                          setAudioProgress(prev => ({ ...prev, [note.id]: 0 }))
+                        }}
+                      />
+                      <div className="audio-player-wrapper">
+                        <button
+                          className="audio-play-button-small"
+                          onClick={() => {
+                            const audio = document.getElementById(`audio-${note.id}`)
+                            if (isPlayingAudio === note.id) {
+                              audio.pause()
+                              setIsPlayingAudio(null)
+                            } else {
+                              // Önceki sesi durdur
+                              if (isPlayingAudio) {
+                                const prevAudio = document.getElementById(`audio-${isPlayingAudio}`)
+                                if (prevAudio) {
+                                  prevAudio.pause()
+                                  prevAudio.currentTime = 0
+                                }
+                                setIsPlayingAudio(null)
+                              }
+                              audio.play()
+                              setIsPlayingAudio(note.id)
+                            }
+                          }}
+                        >
+                          {isPlayingAudio === note.id ? '⏸️' : '▶️'}
+                        </button>
+                        <div className="audio-controls">
+                          <div className="audio-time">
+                            {formatTime(audioProgress[note.id] || 0)} / {formatTime(audioDuration[note.id] || 0)}
+                          </div>
+                          <input
+                            type="range"
+                            min="0"
+                            max={audioDuration[note.id] || 0}
+                            value={audioProgress[note.id] || 0}
+                            onChange={(e) => {
+                              const audio = document.getElementById(`audio-${note.id}`)
+                              const newTime = parseFloat(e.target.value)
+                              audio.currentTime = newTime
+                              setAudioProgress(prev => ({ ...prev, [note.id]: newTime }))
+                            }}
+                            className="audio-progress-bar"
+                            step="0.1"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                  {currentUser?.role === 'admin' && editingAudioNote === 'all' && (
+                    <>
+                      <button 
+                        className="note-edit-btn"
+                        onClick={() => handleEditAudioNote(note)}
+                        title="Düzenle"
+                      >
+                        ✏️
+                      </button>
+                      <button 
+                        className="note-delete-btn"
+                        onClick={() => handleDeleteAudioNote(note.id)}
+                        title="Sil"
+                      >
+                        🗑️
+                      </button>
+                    </>
+                  )}
+                </div>
+                      ))}
+                      
+                      {/* Sayfa Navigasyonu */}
+                      {totalPages > 1 && (
+                        <div className="notes-pagination">
+                          <button
+                            className="pagination-btn"
+                            onClick={() => setCurrentAudioNotesPage(prev => Math.max(1, prev - 1))}
+                            disabled={currentAudioNotesPage === 1}
+                          >
+                            ← Önceki
+                          </button>
+                          <span className="pagination-info">
+                            Sayfa {currentAudioNotesPage} / {totalPages}
+                          </span>
+                          <button
+                            className="pagination-btn"
+                            onClick={() => setCurrentAudioNotesPage(prev => Math.min(totalPages, prev + 1))}
+                            disabled={currentAudioNotesPage === totalPages}
+                          >
+                            Sonraki →
+                          </button>
+                        </div>
+                      )}
+                    </>
+                  )
+                })()}
+              </>
+            )}
+          </div>
+        </section>
+
         {/* Not Ekleme Modal */}
         {showNotesModal && currentUser?.role === 'admin' && (
           <div className="upload-modal-overlay" onClick={() => {
@@ -1575,6 +2080,117 @@ function App() {
                 />
                 <button type="submit" className="login-button">
                   {editingNote && editingNote !== 'all' ? '💕 Güncelle' : '💕 Not Ekle'}
+                </button>
+              </form>
+            </div>
+          </div>
+        )}
+
+        {/* Sesli Not Ekleme Modal */}
+        {showAudioNotesModal && currentUser?.role === 'admin' && (
+          <div className="upload-modal-overlay" onClick={() => {
+            if (isRecording) {
+              cancelRecording()
+            }
+            setShowAudioNotesModal(false)
+            setEditingAudioNote(null)
+            setAudioNoteTitle('')
+            setAudioChunks([])
+            setRecordingTime(0)
+          }}>
+            <div className="upload-modal" onClick={(e) => e.stopPropagation()}>
+              <button 
+                className="upload-modal-close" 
+                onClick={() => {
+                  if (isRecording) {
+                    cancelRecording()
+                  }
+                  setShowAudioNotesModal(false)
+                  setEditingAudioNote(null)
+                  setAudioNoteTitle('')
+                  setAudioChunks([])
+                  setRecordingTime(0)
+                }}
+              >
+                ✕
+              </button>
+              <h2>{editingAudioNote && editingAudioNote !== 'all' ? 'Sesli Not Düzenle ✏️' : 'Sesli Not Kaydet 🎤'}</h2>
+              <p>{editingAudioNote && editingAudioNote !== 'all' ? 'Sesli notu güncelleyin!' : 'Sevgilinize özel bir ses kaydı yapın!'}</p>
+              <form onSubmit={handleAddAudioNote} className="note-form">
+                {/* Başlık Input */}
+                <input
+                  type="text"
+                  value={audioNoteTitle}
+                  onChange={(e) => setAudioNoteTitle(e.target.value)}
+                  placeholder="Başlık (Opsiyonel)"
+                  className="note-textarea"
+                  style={{ minHeight: 'auto', padding: '12px 20px', marginBottom: '15px' }}
+                />
+                
+                {/* Ses Kayıt Bölümü */}
+                <div className="audio-recording-section">
+                  {!isRecording && audioChunks.length === 0 && (
+                    <button
+                      type="button"
+                      className="start-recording-button"
+                      onClick={startRecording}
+                    >
+                      🎤 Ses Kaydı Başlat
+                    </button>
+                  )}
+                  
+                  {isRecording && (
+                    <div className="recording-controls">
+                      <div className="recording-indicator">
+                        <span className="recording-dot"></span>
+                        <span>Kaydediliyor... {Math.floor(recordingTime / 60)}:{(recordingTime % 60).toString().padStart(2, '0')}</span>
+                      </div>
+                      <div className="recording-buttons">
+                        <button
+                          type="button"
+                          className="stop-recording-button"
+                          onClick={stopRecording}
+                        >
+                          ⏹️ Durdur
+                        </button>
+                        <button
+                          type="button"
+                          className="cancel-recording-button"
+                          onClick={cancelRecording}
+                        >
+                          ❌ İptal
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                  
+                  {!isRecording && audioChunks.length > 0 && (
+                    <div className="audio-preview">
+                      <audio 
+                        src={URL.createObjectURL(new Blob(audioChunks, { type: 'audio/webm' }))}
+                        controls
+                        className="audio-preview-player"
+                      />
+                      <button
+                        type="button"
+                        className="remove-audio-button"
+                        onClick={() => {
+                          setAudioChunks([])
+                          setRecordingTime(0)
+                        }}
+                      >
+                        🗑️ Ses Kaydını Kaldır
+                      </button>
+                    </div>
+                  )}
+                </div>
+                
+                <button 
+                  type="submit" 
+                  className="login-button"
+                  disabled={audioChunks.length === 0}
+                >
+                  {editingAudioNote && editingAudioNote !== 'all' ? '💕 Güncelle' : '💕 Sesli Not Ekle'}
                 </button>
               </form>
             </div>

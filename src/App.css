@@ -2681,6 +2681,24 @@
   padding: 60px 0;
 }
 
+.audio-notes-section {
+  margin-top: 100px;
+}
+
+.audio-note-card {
+  border-left: 4px solid rgba(237, 100, 166, 0.6);
+}
+
+.audio-note-title {
+  font-size: 1.3rem;
+  font-weight: 600;
+  color: white;
+  margin: 15px 0 10px 0;
+  padding-bottom: 10px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  font-family: 'Playfair Display', serif;
+}
+
 .notes-header {
   display: flex;
   justify-content: space-between;
@@ -2993,6 +3011,339 @@
   box-shadow: 
     0 0 0 3px rgba(237, 100, 166, 0.1),
     0 4px 20px rgba(237, 100, 166, 0.3);
+}
+
+/* Ses Kayıt Bölümü */
+.audio-recording-section {
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+  padding: 20px;
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.start-recording-button {
+  padding: 14px 28px;
+  font-size: 1rem;
+  font-weight: 600;
+  color: white;
+  background: linear-gradient(135deg, #ed64a6 0%, #f093fb 50%, #7877c6 100%);
+  background-size: 200% 200%;
+  border: none;
+  border-radius: 50px;
+  cursor: pointer;
+  transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 4px 20px rgba(237, 100, 166, 0.4);
+  letter-spacing: 0.5px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.start-recording-button:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 8px 30px rgba(237, 100, 166, 0.6);
+  background-position: 100% 0;
+}
+
+.recording-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+  align-items: center;
+}
+
+.recording-indicator {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 20px;
+  background: rgba(255, 50, 50, 0.15);
+  border: 1px solid rgba(255, 50, 50, 0.3);
+  border-radius: 12px;
+  color: #ff6b6b;
+  font-weight: 600;
+  font-size: 1rem;
+}
+
+.recording-dot {
+  width: 12px;
+  height: 12px;
+  background: #ff3232;
+  border-radius: 50%;
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.5;
+    transform: scale(1.2);
+  }
+}
+
+.recording-buttons {
+  display: flex;
+  gap: 12px;
+}
+
+.stop-recording-button,
+.cancel-recording-button {
+  padding: 10px 20px;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: white;
+  border: none;
+  border-radius: 12px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.stop-recording-button {
+  background: linear-gradient(135deg, #4ade80 0%, #22c55e 100%);
+}
+
+.stop-recording-button:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 15px rgba(34, 197, 94, 0.4);
+}
+
+.cancel-recording-button {
+  background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+}
+
+.cancel-recording-button:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 15px rgba(239, 68, 68, 0.4);
+}
+
+.audio-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  align-items: center;
+}
+
+.audio-preview-player {
+  width: 100%;
+  max-width: 400px;
+  border-radius: 12px;
+}
+
+.remove-audio-button {
+  padding: 8px 16px;
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.8);
+  background: rgba(255, 50, 50, 0.2);
+  border: 1px solid rgba(255, 50, 50, 0.3);
+  border-radius: 12px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.remove-audio-button:hover {
+  background: rgba(255, 50, 50, 0.3);
+  border-color: rgba(255, 50, 50, 0.5);
+  color: white;
+}
+
+/* Sesli Not Gösterimi */
+.audio-note-container {
+  margin-top: 15px;
+  padding: 15px;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.audio-play-button {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 20px;
+  font-size: 1rem;
+  font-weight: 600;
+  color: white;
+  background: linear-gradient(135deg, #ed64a6 0%, #f093fb 50%, #7877c6 100%);
+  background-size: 200% 200%;
+  border: none;
+  border-radius: 12px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  box-shadow: 0 4px 15px rgba(237, 100, 166, 0.3);
+  width: 100%;
+  justify-content: center;
+}
+
+.audio-play-button:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(237, 100, 166, 0.5);
+  background-position: 100% 0;
+}
+
+.audio-playing-indicator {
+  animation: pulse 1.5s ease-in-out infinite;
+  margin-left: 5px;
+}
+
+/* Gelişmiş Audio Player */
+.audio-player-wrapper {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  width: 100%;
+}
+
+.audio-play-button-small {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 45px;
+  height: 45px;
+  font-size: 1.2rem;
+  color: white;
+  background: linear-gradient(135deg, #ed64a6 0%, #f093fb 50%, #7877c6 100%);
+  background-size: 200% 200%;
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  box-shadow: 0 4px 15px rgba(237, 100, 166, 0.3);
+  flex-shrink: 0;
+}
+
+.audio-play-button-small:hover {
+  transform: scale(1.1);
+  box-shadow: 0 6px 20px rgba(237, 100, 166, 0.5);
+  background-position: 100% 0;
+}
+
+.audio-controls {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.audio-time {
+  font-size: 0.85rem;
+  color: rgba(255, 255, 255, 0.7);
+  font-weight: 500;
+  text-align: center;
+}
+
+.audio-progress-bar {
+  width: 100%;
+  height: 6px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.2);
+  outline: none;
+  -webkit-appearance: none;
+  appearance: none;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  margin: 0;
+  padding: 0;
+}
+
+.audio-progress-bar::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: white;
+  cursor: pointer;
+  border: 3px solid rgba(237, 100, 166, 0.8);
+  box-shadow: 
+    0 0 0 4px rgba(237, 100, 166, 0.2),
+    0 4px 12px rgba(0, 0, 0, 0.3);
+  transition: all 0.2s ease;
+  margin-top: -7px;
+  position: relative;
+}
+
+.audio-progress-bar::-webkit-slider-thumb:hover {
+  transform: scale(1.15);
+  border-color: rgba(237, 100, 166, 1);
+  box-shadow: 
+    0 0 0 6px rgba(237, 100, 166, 0.3),
+    0 6px 16px rgba(0, 0, 0, 0.4);
+}
+
+.audio-progress-bar::-webkit-slider-thumb:active {
+  transform: scale(1.1);
+  box-shadow: 
+    0 0 0 8px rgba(237, 100, 166, 0.4),
+    0 8px 20px rgba(0, 0, 0, 0.5);
+}
+
+.audio-progress-bar::-moz-range-thumb {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: white;
+  cursor: pointer;
+  border: 3px solid rgba(237, 100, 166, 0.8);
+  box-shadow: 
+    0 0 0 4px rgba(237, 100, 166, 0.2),
+    0 4px 12px rgba(0, 0, 0, 0.3);
+  transition: all 0.2s ease;
+}
+
+.audio-progress-bar::-moz-range-thumb:hover {
+  transform: scale(1.15);
+  border-color: rgba(237, 100, 166, 1);
+  box-shadow: 
+    0 0 0 6px rgba(237, 100, 166, 0.3),
+    0 6px 16px rgba(0, 0, 0, 0.4);
+}
+
+.audio-progress-bar::-moz-range-thumb:active {
+  transform: scale(1.1);
+  box-shadow: 
+    0 0 0 8px rgba(237, 100, 166, 0.4),
+    0 8px 20px rgba(0, 0, 0, 0.5);
+}
+
+.audio-progress-bar::-webkit-slider-runnable-track {
+  height: 6px;
+  border-radius: 3px;
+  background: linear-gradient(90deg, 
+    rgba(237, 100, 166, 0.6) 0%, 
+    rgba(240, 147, 251, 0.6) 50%, 
+    rgba(120, 119, 198, 0.6) 100%
+  );
+  margin: 0;
+  padding: 0;
+}
+
+.audio-progress-bar::-moz-range-track {
+  height: 6px;
+  border-radius: 3px;
+  background: linear-gradient(90deg, 
+    rgba(237, 100, 166, 0.6) 0%, 
+    rgba(240, 147, 251, 0.6) 50%, 
+    rgba(120, 119, 198, 0.6) 100%
+  );
+}
+
+.login-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.login-button:disabled:hover {
+  transform: none;
+  box-shadow: 0 4px 20px rgba(237, 100, 166, 0.4);
 }
 
 /* Mobile Touch Optimizations */
