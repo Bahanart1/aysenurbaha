@@ -61,6 +61,11 @@ function App() {
   const [touchStartY, setTouchStartY] = useState(null)
   const [touchStartIndex, setTouchStartIndex] = useState(null)
   const [isEditMode, setIsEditMode] = useState(false)
+  const [theme, setTheme] = useState(() => {
+    // localStorage'dan tema tercihini yükle
+    const savedTheme = localStorage.getItem('lovesite_theme')
+    return savedTheme || 'purple' // Varsayılan mor
+  })
   
   
   // Sadece yüklenen fotoğraflar
@@ -467,6 +472,35 @@ function App() {
     
     console.log('Fotoğraf taşınıyor:', { from: index, to: newIndex, direction })
     await handlePhotoReorder(index, newIndex)
+  }
+
+  // Tema değişikliğini body'ye uygula
+  useEffect(() => {
+    document.body.className = `theme-${theme}`
+    localStorage.setItem('lovesite_theme', theme)
+  }, [theme])
+
+  // Tema değiştirme fonksiyonu
+  const toggleTheme = () => {
+    setTheme(prev => {
+      if (prev === 'purple') return 'pink'
+      if (prev === 'pink') return 'turquoise'
+      return 'purple'
+    })
+  }
+  
+  // Tema emojisi
+  const getThemeEmoji = () => {
+    if (theme === 'purple') return '💜'
+    if (theme === 'pink') return '🩷'
+    return '🩵'
+  }
+  
+  // Tema adı
+  const getThemeName = () => {
+    if (theme === 'purple') return 'Mor'
+    if (theme === 'pink') return 'Pembe'
+    return 'Turkuaz'
   }
 
   // LocalStorage'dan giriş durumunu kontrol et
@@ -1052,7 +1086,17 @@ function App() {
   // Giriş yapılmadıysa login ekranını göster
   if (!isAuthenticated) {
     return (
-      <div className="login-container">
+      <>
+        {/* Tema Değiştirme Butonu - Login Sayfasında */}
+        <button 
+          className="theme-toggle-button"
+          onClick={toggleTheme}
+          aria-label="Tema değiştir"
+          title={`Tema: ${getThemeName()}`}
+        >
+          {getThemeEmoji()}
+        </button>
+        <div className="login-container">
         <div className="login-box">
           <div className="login-header">
             <div className="login-icon">💕</div>
@@ -1104,6 +1148,7 @@ function App() {
           )}
         </div>
       </div>
+      </>
     )
   }
 
@@ -1121,10 +1166,20 @@ function App() {
               fontSize: `${heart.size}px`
             }}
           >
-            ❤️
+            {getThemeEmoji()}
           </div>
         ))}
       </div>
+
+        {/* Tema Değiştirme Butonu */}
+        <button 
+          className="theme-toggle-button"
+          onClick={toggleTheme}
+          aria-label="Tema değiştir"
+          title={`Tema: ${getThemeName()}`}
+        >
+          {getThemeEmoji()}
+        </button>
 
       {/* Ana içerik */}
       <div className="content">
@@ -1132,7 +1187,7 @@ function App() {
         <header className="hero-section">
           <h1 className="main-title">
             <span className="name">Baha</span>
-            <span className="heart-icon">❤️</span>
+            <span className="heart-icon">{getThemeEmoji()}</span>
             <span className="name">Ayşenur</span>
           </h1>
           <p className="family-name">Şenel</p>

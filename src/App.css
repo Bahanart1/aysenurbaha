@@ -3350,6 +3350,55 @@ textarea {
   transform: translateY(0);
 }
 
+/* Tema Değiştirme Butonu */
+.theme-toggle-button {
+  position: fixed;
+  top: 30px;
+  right: 30px;
+  width: 60px;
+  height: 60px;
+  border: none;
+  background: rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  border-radius: 50%;
+  color: white;
+  font-size: 28px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  z-index: 1000;
+  box-shadow: 
+    0 8px 32px 0 rgba(31, 38, 135, 0.37),
+    0 4px 15px rgba(0, 0, 0, 0.2);
+}
+
+.theme-toggle-button:hover {
+  background: rgba(255, 255, 255, 0.15);
+  transform: scale(1.1) rotate(15deg);
+  box-shadow: 
+    0 8px 32px 0 rgba(31, 38, 135, 0.5),
+    0 8px 25px rgba(237, 100, 166, 0.4);
+  border-color: rgba(255, 255, 255, 0.3);
+}
+
+.theme-toggle-button:active {
+  transform: scale(1.05) rotate(15deg);
+}
+
+@media (max-width: 768px) {
+  .theme-toggle-button {
+    top: 20px;
+    right: 20px;
+    width: 50px;
+    height: 50px;
+    font-size: 24px;
+  }
+}
+
 /* Upload Modal */
 .upload-modal-overlay {
   position: fixed;

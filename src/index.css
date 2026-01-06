@@ -17,23 +17,67 @@
 
 html {
   scroll-behavior: smooth;
-  background-color: #0f0c29;
   min-height: 100%;
   height: 100%;
   overflow-x: hidden;
+  transition: background-color 0.5s ease;
+}
+
+html body.theme-purple {
+  background-color: #0f0c29;
+}
+
+html body.theme-pink {
+  background-color: #2d1b2d;
+}
+
+html body.theme-turquoise {
+  background-color: #2d5a6a;
 }
 
 body {
   font-family: 'Poppins', sans-serif;
-  background: #0f0c29;
-  background: linear-gradient(to bottom, #0f0c29, #302b63, #24243e);
-  background-attachment: fixed;
-  background-size: 100% 100%;
-  background-repeat: no-repeat;
   min-height: 100vh;
   min-height: -webkit-fill-available;
   overflow-x: hidden;
   position: relative;
+  transition: background 0.5s ease;
+}
+
+/* Mor Tema (Varsayılan) */
+body.theme-purple {
+  background: #0f0c29;
+}
+
+/* Pembe Tema */
+body.theme-pink {
+  background: #2d1b2d;
+}
+
+/* Turkuaz Tema */
+body.theme-turquoise {
+  background: #2d5a6a;
+}
+
+body.theme-purple::before {
+  background-image: 
+    radial-gradient(circle at 20% 50%, rgba(120, 119, 198, 0.1) 0%, transparent 50%),
+    radial-gradient(circle at 80% 80%, rgba(237, 100, 166, 0.1) 0%, transparent 50%),
+    radial-gradient(circle at 40% 20%, rgba(189, 195, 199, 0.05) 0%, transparent 50%);
+}
+
+body.theme-pink::before {
+  background-image: 
+    radial-gradient(circle at 20% 50%, rgba(237, 100, 166, 0.15) 0%, transparent 50%),
+    radial-gradient(circle at 80% 80%, rgba(240, 147, 251, 0.15) 0%, transparent 50%),
+    radial-gradient(circle at 40% 20%, rgba(255, 182, 193, 0.1) 0%, transparent 50%);
+}
+
+body.theme-turquoise::before {
+  background-image: 
+    radial-gradient(circle at 20% 50%, rgba(64, 224, 208, 0.15) 0%, transparent 50%),
+    radial-gradient(circle at 80% 80%, rgba(72, 209, 204, 0.15) 0%, transparent 50%),
+    radial-gradient(circle at 40% 20%, rgba(95, 158, 160, 0.1) 0%, transparent 50%);
 }
 
 body::before {
@@ -43,12 +87,9 @@ body::before {
   left: 0;
   width: 100%;
   height: 100%;
-  background-image: 
-    radial-gradient(circle at 20% 50%, rgba(120, 119, 198, 0.1) 0%, transparent 50%),
-    radial-gradient(circle at 80% 80%, rgba(237, 100, 166, 0.1) 0%, transparent 50%),
-    radial-gradient(circle at 40% 20%, rgba(189, 195, 199, 0.05) 0%, transparent 50%);
   pointer-events: none;
   z-index: 0;
+  transition: background-image 0.5s ease;
 }
 
 #root {
