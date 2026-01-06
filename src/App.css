@@ -491,6 +491,13 @@
   animation: none;
 }
 
+.gallery-actions {
+  display: flex;
+  gap: 15px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
 .upload-button {
   padding: 14px 32px;
   font-size: 1rem;
@@ -515,6 +522,41 @@
 
 .upload-button:active {
   transform: translateY(-2px);
+}
+
+.edit-order-button {
+  padding: 14px 32px;
+  font-size: 1rem;
+  font-weight: 600;
+  color: white;
+  background: linear-gradient(135deg, #7877c6 0%, #ed64a6 50%, #f093fb 100%);
+  background-size: 200% 200%;
+  border: none;
+  border-radius: 50px;
+  cursor: pointer;
+  transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 4px 20px rgba(120, 119, 198, 0.4);
+  letter-spacing: 0.5px;
+  white-space: nowrap;
+}
+
+.edit-order-button:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 8px 30px rgba(120, 119, 198, 0.6);
+  background-position: 100% 0;
+}
+
+.edit-order-button:active {
+  transform: translateY(-2px);
+}
+
+.edit-order-button.active {
+  background: linear-gradient(135deg, #4ade80 0%, #22c55e 50%, #16a34a 100%);
+  box-shadow: 0 4px 20px rgba(34, 197, 94, 0.4);
+}
+
+.edit-order-button.active:hover {
+  box-shadow: 0 8px 30px rgba(34, 197, 94, 0.6);
 }
 
 .title-decoration {
@@ -573,6 +615,24 @@
   cursor: pointer;
 }
 
+.photo-item.draggable {
+  cursor: grab;
+}
+
+.photo-item.draggable:active {
+  cursor: grabbing;
+}
+
+.photo-item.dragging {
+  opacity: 0.5;
+  transform: scale(0.95);
+  z-index: 1000;
+}
+
+.photo-item.draggable:hover {
+  border-color: rgba(237, 100, 166, 0.5);
+}
+
 .photo-item::after {
   content: '';
   position: absolute;
@@ -611,34 +671,128 @@
   transform: scale(1.15);
 }
 
-.photo-overlay {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  background: linear-gradient(
-    135deg,
-    rgba(237, 100, 166, 0.85),
-    rgba(240, 147, 251, 0.85),
-    rgba(120, 119, 198, 0.85)
-  );
-  backdrop-filter: blur(10px);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  opacity: 0;
-  transition: opacity 0.5s cubic-bezier(0.4, 0, 0.2, 1);
-}
+/* Overlay kaldırıldı - artık kullanılmıyor */
 
-.photo-item:hover .photo-overlay {
-  opacity: 1;
-}
+/* Overlay kaldırıldı */
 
 .overlay-text {
   font-size: 4.5rem;
   filter: drop-shadow(0 4px 20px rgba(255, 255, 255, 0.5));
   animation: heartPulse 1.2s ease-in-out infinite;
+}
+
+.drag-hint {
+  position: absolute;
+  bottom: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 0.9rem;
+  color: rgba(255, 255, 255, 0.9);
+  background: rgba(0, 0, 0, 0.6);
+  padding: 5px 10px;
+  border-radius: 8px;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+  pointer-events: none;
+  z-index: 10;
+}
+
+.photo-item.draggable:hover .drag-hint {
+  opacity: 1;
+}
+
+/* Mobil sıralama butonları */
+.mobile-order-buttons {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  z-index: 100;
+  pointer-events: auto;
+}
+
+.order-btn {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.9);
+  background: rgba(237, 100, 166, 0.9);
+  color: white;
+  font-size: 1.2rem;
+  font-weight: bold;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.3s ease;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+  position: relative;
+  z-index: 101;
+  pointer-events: auto;
+}
+
+.order-btn:active {
+  transform: scale(0.9);
+  background: rgba(237, 100, 166, 1);
+}
+
+.order-btn:hover {
+  background: rgba(237, 100, 166, 1);
+  box-shadow: 0 6px 16px rgba(237, 100, 166, 0.5);
+  transform: scale(1.1);
+}
+
+.order-btn-up {
+  background: rgba(120, 119, 198, 0.9);
+}
+
+.order-btn-up:hover {
+  background: rgba(120, 119, 198, 1);
+  box-shadow: 0 6px 16px rgba(120, 119, 198, 0.5);
+}
+
+/* Mobil cihazlarda butonları düzenleme modunda göster */
+@media (max-width: 768px) {
+  .gallery-actions {
+    width: 100%;
+    flex-direction: row;
+    justify-content: center;
+    flex-wrap: wrap;
+  }
+  
+  .upload-button,
+  .edit-order-button {
+    flex: 1;
+    min-width: 140px;
+    max-width: 200px;
+  }
+  
+  .mobile-order-buttons {
+    opacity: 1;
+  }
+  
+  .drag-hint {
+    display: none;
+  }
+  
+  .photo-item.draggable {
+    cursor: default;
+  }
+  
+  .order-btn {
+    width: 40px;
+    height: 40px;
+    font-size: 1.4rem;
+  }
+  
+  /* Düzenleme modunda butonlar her zaman görünür */
+  .is-edit-mode .mobile-order-buttons {
+    opacity: 1;
+  }
 }
 
 @keyframes heartPulse {
@@ -856,8 +1010,8 @@
   .tree-wrapper {
     flex-direction: column;
     align-items: center;
-    gap: 30px;
-  }
+  gap: 30px;
+}
 
   .tree-svg-container {
     min-width: auto;
@@ -1363,7 +1517,7 @@
     flex: 1;
     justify-content: flex-end;
     margin: 0;
-  }
+}
 
   .jar-stat-item {
     padding: 10px 15px;
@@ -1451,6 +1605,13 @@
   animation: none;
 }
 
+.map-actions {
+  display: flex;
+  gap: 15px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
 .add-map-button {
   padding: 14px 32px;
   font-size: 1rem;
@@ -1471,6 +1632,38 @@
   transform: translateY(-4px);
   box-shadow: 0 8px 30px rgba(237, 100, 166, 0.6);
   background-position: 100% 0;
+}
+
+.edit-places-button {
+  padding: 14px 32px;
+  font-size: 1rem;
+  font-weight: 600;
+  color: white;
+  background: linear-gradient(135deg, #7877c6 0%, #ed64a6 50%, #f093fb 100%);
+  background-size: 200% 200%;
+  border: none;
+  border-radius: 50px;
+  cursor: pointer;
+  transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 4px 20px rgba(120, 119, 198, 0.4);
+  letter-spacing: 0.5px;
+  white-space: nowrap;
+}
+
+.edit-places-button:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 8px 30px rgba(120, 119, 198, 0.6);
+  background-position: 100% 0;
+}
+
+.edit-places-button.active,
+.edit-places-button:has-text("✅") {
+  background: linear-gradient(135deg, #4ade80 0%, #22c55e 50%, #16a34a 100%);
+  box-shadow: 0 4px 20px rgba(34, 197, 94, 0.4);
+}
+
+.edit-places-button.active:hover {
+  box-shadow: 0 8px 30px rgba(34, 197, 94, 0.6);
 }
 
 .places-list-container {
@@ -1540,6 +1733,25 @@
   color: rgba(255, 255, 255, 0.5);
   font-size: 0.9rem;
   font-style: italic;
+}
+
+.place-edit-btn {
+  background: rgba(120, 119, 198, 0.2);
+  border: 1px solid rgba(120, 119, 198, 0.4);
+  color: rgba(120, 119, 198, 0.9);
+  border-radius: 8px;
+  padding: 8px 12px;
+  cursor: pointer;
+  font-size: 1.2rem;
+  transition: all 0.3s ease;
+  flex-shrink: 0;
+  margin-right: 8px;
+}
+
+.place-edit-btn:hover {
+  background: rgba(120, 119, 198, 0.4);
+  transform: scale(1.1);
+  box-shadow: 0 4px 15px rgba(120, 119, 198, 0.4);
 }
 
 .place-delete-btn {
@@ -1661,8 +1873,17 @@
     text-align: center;
   }
 
-  .add-map-button {
+  .map-actions {
     width: 100%;
+    flex-direction: row;
+    justify-content: center;
+  }
+  
+  .add-map-button,
+  .edit-places-button {
+    flex: 1;
+    min-width: 140px;
+    max-width: 200px;
   }
 
   .places-list-container {
@@ -1720,6 +1941,13 @@
   margin: 0;
 }
 
+.timeline-actions {
+  display: flex;
+  gap: 15px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
 .add-timeline-button {
   padding: 14px 32px;
   font-size: 1rem;
@@ -1740,6 +1968,38 @@
   transform: translateY(-4px);
   box-shadow: 0 8px 30px rgba(237, 100, 166, 0.6);
   background-position: 100% 0;
+}
+
+.edit-timeline-button {
+  padding: 14px 32px;
+  font-size: 1rem;
+  font-weight: 600;
+  color: white;
+  background: linear-gradient(135deg, #7877c6 0%, #ed64a6 50%, #f093fb 100%);
+  background-size: 200% 200%;
+  border: none;
+  border-radius: 50px;
+  cursor: pointer;
+  transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 4px 20px rgba(120, 119, 198, 0.4);
+  letter-spacing: 0.5px;
+  white-space: nowrap;
+}
+
+.edit-timeline-button:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 8px 30px rgba(120, 119, 198, 0.6);
+  background-position: 100% 0;
+}
+
+.edit-timeline-button.active,
+.edit-timeline-button:has-text("✅") {
+  background: linear-gradient(135deg, #4ade80 0%, #22c55e 50%, #16a34a 100%);
+  box-shadow: 0 4px 20px rgba(34, 197, 94, 0.4);
+}
+
+.edit-timeline-button.active:hover {
+  box-shadow: 0 8px 30px rgba(34, 197, 94, 0.6);
 }
 
 .timeline-container {
@@ -1823,13 +2083,40 @@
   overflow: hidden;
 }
 
+.timeline-edit-btn {
+  position: absolute;
+  top: 20px;
+  right: 65px;
+  width: 36px;
+  height: 36px;
+  border: 1px solid rgba(120, 119, 198, 0.3);
+  background: rgba(120, 119, 198, 0.2);
+  backdrop-filter: blur(10px);
+  border-radius: 50%;
+  color: white;
+  font-size: 18px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  opacity: 1;
+  z-index: 10;
+}
+
+.timeline-edit-btn:hover {
+  background: rgba(120, 119, 198, 0.9);
+  transform: scale(1.1);
+  box-shadow: 0 4px 15px rgba(120, 119, 198, 0.6);
+}
+
 .timeline-delete-btn {
   position: absolute;
   top: 20px;
   right: 20px;
   width: 36px;
   height: 36px;
-  border: none;
+  border: 1px solid rgba(255, 50, 50, 0.3);
   background: rgba(255, 50, 50, 0.2);
   backdrop-filter: blur(10px);
   border-radius: 50%;
@@ -1840,13 +2127,8 @@
   align-items: center;
   justify-content: center;
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  border: 1px solid rgba(255, 50, 50, 0.3);
-  opacity: 0;
-  z-index: 10;
-}
-
-.timeline-item:hover .timeline-delete-btn {
   opacity: 1;
+  z-index: 10;
 }
 
 .timeline-delete-btn:hover {
@@ -2278,8 +2560,22 @@
     text-align: center;
   }
 
-  .add-timeline-button {
+  .timeline-actions {
     width: 100%;
+    flex-direction: row;
+    justify-content: center;
+  }
+  
+  .add-timeline-button,
+  .edit-timeline-button {
+    flex: 1;
+    min-width: 140px;
+    max-width: 200px;
+  }
+  
+  .timeline-edit-btn {
+    top: 15px;
+    right: 60px;
   }
 
   .timeline-delete-btn {
@@ -2408,6 +2704,13 @@
   margin: 0;
 }
 
+.notes-actions {
+  display: flex;
+  gap: 15px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
 .add-note-button {
   padding: 14px 32px;
   font-size: 1rem;
@@ -2428,6 +2731,38 @@
   transform: translateY(-4px);
   box-shadow: 0 8px 30px rgba(237, 100, 166, 0.6);
   background-position: 100% 0;
+}
+
+.edit-notes-button {
+  padding: 14px 32px;
+  font-size: 1rem;
+  font-weight: 600;
+  color: white;
+  background: linear-gradient(135deg, #7877c6 0%, #ed64a6 50%, #f093fb 100%);
+  background-size: 200% 200%;
+  border: none;
+  border-radius: 50px;
+  cursor: pointer;
+  transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 4px 20px rgba(120, 119, 198, 0.4);
+  letter-spacing: 0.5px;
+  white-space: nowrap;
+}
+
+.edit-notes-button:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 8px 30px rgba(120, 119, 198, 0.6);
+  background-position: 100% 0;
+}
+
+.edit-notes-button.active,
+.edit-notes-button:has-text("✅") {
+  background: linear-gradient(135deg, #4ade80 0%, #22c55e 50%, #16a34a 100%);
+  box-shadow: 0 4px 20px rgba(34, 197, 94, 0.4);
+}
+
+.edit-notes-button.active:hover {
+  box-shadow: 0 8px 30px rgba(34, 197, 94, 0.6);
 }
 
 .notes-container {
@@ -2527,13 +2862,39 @@
   cursor: text;
 }
 
+.note-edit-btn {
+  position: absolute;
+  top: 20px;
+  right: 65px;
+  width: 36px;
+  height: 36px;
+  border: 1px solid rgba(120, 119, 198, 0.3);
+  background: rgba(120, 119, 198, 0.2);
+  backdrop-filter: blur(10px);
+  border-radius: 50%;
+  color: white;
+  font-size: 18px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  opacity: 1;
+}
+
+.note-edit-btn:hover {
+  background: rgba(120, 119, 198, 0.9);
+  transform: scale(1.1);
+  box-shadow: 0 4px 15px rgba(120, 119, 198, 0.6);
+}
+
 .note-delete-btn {
   position: absolute;
   top: 20px;
   right: 20px;
   width: 36px;
   height: 36px;
-  border: none;
+  border: 1px solid rgba(255, 50, 50, 0.3);
   background: rgba(255, 50, 50, 0.2);
   backdrop-filter: blur(10px);
   border-radius: 50%;
@@ -2544,11 +2905,6 @@
   align-items: center;
   justify-content: center;
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  border: 1px solid rgba(255, 50, 50, 0.3);
-  opacity: 0;
-}
-
-.note-card:hover .note-delete-btn {
   opacity: 1;
 }
 
@@ -2677,14 +3033,28 @@ textarea {
     text-align: center;
   }
 
-  .add-note-button {
+  .notes-actions {
     width: 100%;
+    flex-direction: row;
+    justify-content: center;
+  }
+  
+  .add-note-button,
+  .edit-notes-button {
+    flex: 1;
+    min-width: 140px;
+    max-width: 200px;
   }
 
   .note-card {
     padding: 25px 20px;
   }
 
+  .note-edit-btn {
+    top: 15px;
+    right: 60px;
+  }
+  
   .note-delete-btn {
     opacity: 1;
     top: 15px;

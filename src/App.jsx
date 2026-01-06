@@ -19,14 +19,16 @@ function App() {
   const [notes, setNotes] = useState([])
   const [newNote, setNewNote] = useState('')
   const [showNotesModal, setShowNotesModal] = useState(false)
+  const [editingNote, setEditingNote] = useState(null)
   const [currentNotesPage, setCurrentNotesPage] = useState(1)
-  const notesPerPage = 5
+  const notesPerPage = 4
   const [currentPlacesPage, setCurrentPlacesPage] = useState(1)
   const placesPerPage = 4
   const [currentPhotosPage, setCurrentPhotosPage] = useState(1)
   const photosPerPage = 6
   const [timelineEvents, setTimelineEvents] = useState([])
   const [showTimelineModal, setShowTimelineModal] = useState(false)
+  const [editingTimeline, setEditingTimeline] = useState(null)
   const [timelineForm, setTimelineForm] = useState({
     icon: '',
     title: '',
@@ -35,12 +37,19 @@ function App() {
   })
   const [visitedPlaces, setVisitedPlaces] = useState([])
   const [showMapModal, setShowMapModal] = useState(false)
+  const [editingPlace, setEditingPlace] = useState(null)
   const [mapForm, setMapForm] = useState({
     name: '',
-    description: ''
+    description: '',
+    date: new Date().toISOString().split('T')[0]
   })
   const [dailyAffections, setDailyAffections] = useState([])
   const [todayDate, setTodayDate] = useState(new Date().toISOString().split('T')[0])
+  const [isDragging, setIsDragging] = useState(false)
+  const [draggedIndex, setDraggedIndex] = useState(null)
+  const [touchStartY, setTouchStartY] = useState(null)
+  const [touchStartIndex, setTouchStartIndex] = useState(null)
+  const [isEditMode, setIsEditMode] = useState(false)
   
   
   // Sadece yüklenen fotoğraflar
@@ -53,7 +62,8 @@ function App() {
 
   const fetchPhotos = async () => {
     try {
-      const { data, error } = await supabase.storage
+      // Önce storage'dan tüm fotoğrafları çek
+      const { data: storageData, error: storageError } = await supabase.storage
         .from('love-photos')
         .list('', {
           limit: 100,
@@ -61,18 +71,58 @@ function App() {
           sortBy: { column: 'created_at', order: 'desc' }
         })
 
-      if (error) throw error
+      if (storageError) throw storageError
 
-      const photoUrls = data
+      const allPhotos = storageData
         .filter(file => file.name !== '.emptyFolderPlaceholder')
         .map(file => {
           const { data: urlData } = supabase.storage
             .from('love-photos')
             .getPublicUrl(file.name)
-          return urlData.publicUrl
+          return {
+            url: urlData.publicUrl,
+            name: file.name
+          }
         })
 
-      setUploadedPhotos(photoUrls)
+      // Veritabanından sıralamayı çek
+      const { data: orderData, error: orderError } = await supabase
+        .from('photo_order')
+        .select('*')
+        .order('display_order', { ascending: true })
+
+      if (orderError && orderError.code !== 'PGRST116') {
+        // PGRST116 = tablo bulunamadı hatası, bu durumda sıralama yok demektir
+        console.warn('Sıralama verisi çekilemedi:', orderError)
+      }
+
+      let sortedPhotos = allPhotos
+
+      // Eğer sıralama verisi varsa, ona göre sırala
+      if (orderData && orderData.length > 0) {
+        const orderMap = new Map()
+        orderData.forEach(item => {
+          orderMap.set(item.photo_url, item.display_order)
+        })
+
+        // Sıralama verisi olan fotoğrafları önce sırala, sonra diğerlerini ekle
+        const orderedPhotos = []
+        const unorderedPhotos = []
+
+        allPhotos.forEach(photo => {
+          const order = orderMap.get(photo.url)
+          if (order !== undefined) {
+            orderedPhotos.push({ ...photo, order })
+          } else {
+            unorderedPhotos.push(photo)
+          }
+        })
+
+        orderedPhotos.sort((a, b) => a.order - b.order)
+        sortedPhotos = [...orderedPhotos, ...unorderedPhotos]
+      }
+
+      setUploadedPhotos(sortedPhotos.map(p => p.url))
     } catch (error) {
       console.error('Fotoğraflar yüklenemedi:', error)
     }
@@ -93,6 +143,43 @@ function App() {
         .upload(fileName, file)
 
       if (uploadError) throw uploadError
+
+      // Yeni fotoğrafın URL'ini al
+      const { data: urlData } = supabase.storage
+        .from('love-photos')
+        .getPublicUrl(fileName)
+
+      // Yeni fotoğrafı sıralamanın en başına ekle
+      try {
+        // Mevcut tüm sıralamaları çek
+        const { data: existingOrders } = await supabase
+          .from('photo_order')
+          .select('*')
+          .order('display_order', { ascending: true })
+
+        if (existingOrders && existingOrders.length > 0) {
+          // Tüm mevcut sıralamaları 1 artır
+          const updatePromises = existingOrders.map(item =>
+            supabase
+              .from('photo_order')
+              .update({ display_order: item.display_order + 1 })
+              .eq('id', item.id)
+          )
+          await Promise.all(updatePromises)
+        }
+
+        // Yeni fotoğrafı en başa ekle
+        await supabase
+          .from('photo_order')
+          .insert([{
+            photo_url: urlData.publicUrl,
+            photo_name: fileName,
+            display_order: 0
+          }])
+      } catch (orderError) {
+        // Sıralama tablosu yoksa veya hata varsa devam et
+        console.warn('Sıralama kaydedilemedi:', orderError)
+      }
 
       await fetchPhotos()
       setCurrentPhotosPage(1) // Yeni fotoğraf yüklendiğinde ilk sayfaya dön
@@ -115,11 +202,22 @@ function App() {
       // URL'den dosya adını çıkar
       const fileName = photoUrl.split('/').pop().split('?')[0]
 
-      const { error } = await supabase.storage
+      // Storage'dan sil
+      const { error: storageError } = await supabase.storage
         .from('love-photos')
         .remove([fileName])
 
-      if (error) throw error
+      if (storageError) throw storageError
+
+      // Veritabanından sıralama kaydını sil
+      const { error: dbError } = await supabase
+        .from('photo_order')
+        .delete()
+        .eq('photo_url', photoUrl)
+
+      if (dbError && dbError.code !== 'PGRST116') {
+        console.warn('Sıralama kaydı silinemedi:', dbError)
+      }
 
       await fetchPhotos()
       // Eğer son sayfada tek fotoğraf varsa ve silinirse bir önceki sayfaya geç
@@ -133,6 +231,231 @@ function App() {
       console.error('Silme hatası:', error)
       alert('Fotoğraf silinirken hata oluştu 😔')
     }
+  }
+
+  // Sürükle-bırak işlemleri
+  const handleDragStart = (e, index) => {
+    if (currentUser?.role !== 'admin') return
+    setIsDragging(true)
+    setDraggedIndex(index)
+    e.dataTransfer.effectAllowed = 'move'
+    e.dataTransfer.setData('text/html', e.target)
+  }
+
+  const handleDragOver = (e) => {
+    if (currentUser?.role !== 'admin') return
+    e.preventDefault()
+    e.dataTransfer.dropEffect = 'move'
+  }
+
+  const handleDrop = async (e, dropIndex) => {
+    if (currentUser?.role !== 'admin') return
+    e.preventDefault()
+    setIsDragging(false)
+
+    if (draggedIndex === null || draggedIndex === dropIndex) {
+      setDraggedIndex(null)
+      return
+    }
+
+    // Ortak sıralama fonksiyonunu kullan
+    await handlePhotoReorder(draggedIndex, dropIndex)
+    setDraggedIndex(null)
+  }
+
+  const handleDragEnd = () => {
+    if (currentUser?.role !== 'admin') return
+    setIsDragging(false)
+    setDraggedIndex(null)
+  }
+
+  // Mobil touch işlemleri
+  const handleTouchStart = (e, index) => {
+    if (currentUser?.role !== 'admin') return
+    const touch = e.touches[0]
+    setTouchStartY(touch.clientY)
+    setTouchStartIndex(index)
+    setIsDragging(true)
+    setDraggedIndex(index)
+  }
+
+  const handleTouchMove = (e) => {
+    if (currentUser?.role !== 'admin' || touchStartIndex === null) return
+    // Sadece uzun basma sonrası scroll'u engelle
+    if (isDragging) {
+      e.preventDefault()
+    }
+  }
+
+  const handleTouchEnd = async (e) => {
+    if (currentUser?.role !== 'admin' || touchStartIndex === null) {
+      setTouchStartY(null)
+      setTouchStartIndex(null)
+      setIsDragging(false)
+      setDraggedIndex(null)
+      return
+    }
+
+    // Touch bittiğinde hangi elementin üzerinde olduğunu bul
+    const touch = e.changedTouches[0]
+    const elementBelow = document.elementFromPoint(touch.clientX, touch.clientY)
+    
+    // En yakın photo-item'ı bul
+    let targetIndex = touchStartIndex
+    if (elementBelow) {
+      const photoItem = elementBelow.closest('.photo-item')
+      if (photoItem) {
+        // Photo item'ın data-index'ini bul veya parent'tan index'i hesapla
+        const allPhotos = document.querySelectorAll('.photo-item')
+        const index = Array.from(allPhotos).indexOf(photoItem)
+        if (index !== -1) {
+          targetIndex = index
+        }
+      }
+    }
+
+    if (touchStartIndex === targetIndex) {
+      setTouchStartY(null)
+      setTouchStartIndex(null)
+      setIsDragging(false)
+      setDraggedIndex(null)
+      return
+    }
+
+    // Sürükle-bırak işlemini gerçekleştir
+    await handlePhotoReorder(touchStartIndex, targetIndex)
+    
+    setTouchStartY(null)
+    setTouchStartIndex(null)
+    setIsDragging(false)
+    setDraggedIndex(null)
+  }
+
+  // Fotoğraf sıralamasını değiştir (ortak fonksiyon)
+  const handlePhotoReorder = async (fromIndex, toIndex) => {
+    if (currentUser?.role !== 'admin') return
+
+    // Sınır kontrolü
+    if (fromIndex < 0 || fromIndex >= uploadedPhotos.length || 
+        toIndex < 0 || toIndex >= uploadedPhotos.length) {
+      console.warn('Geçersiz index:', { fromIndex, toIndex, length: uploadedPhotos.length })
+      return
+    }
+
+    // Fotoğrafları yeniden sırala
+    const newPhotos = [...uploadedPhotos]
+    const draggedPhoto = newPhotos[fromIndex]
+    newPhotos.splice(fromIndex, 1)
+    newPhotos.splice(toIndex, 0, draggedPhoto)
+
+    // Önce state'i güncelle (anında görsel geri bildirim için)
+    setUploadedPhotos(newPhotos)
+
+    // Veritabanına kaydet
+    try {
+      // Yeni sıralamayı hazırla
+      const orderData = newPhotos.map((url, index) => ({
+        photo_url: url,
+        photo_name: url.split('/').pop().split('?')[0],
+        display_order: index
+      }))
+
+      // Önce tablonun var olup olmadığını kontrol et
+      const { error: checkError } = await supabase
+        .from('photo_order')
+        .select('photo_url')
+        .limit(1)
+
+      // Tablo yoksa veya hata varsa
+      if (checkError) {
+        const isTableNotFound = 
+          checkError.code === 'PGRST116' || 
+          checkError.message?.includes('does not exist') ||
+          checkError.message?.includes('Could not find the table') ||
+          checkError.message?.includes('schema cache')
+        
+        if (isTableNotFound) {
+          console.warn('photo_order tablosu bulunamadı.')
+          alert('⚠️ Sıralama özelliği için veritabanı tablosu oluşturulmamış.\n\n📋 Yapmanız gerekenler:\n1. Supabase Dashboard\'a gidin\n2. SQL Editor\'ü açın\n3. photo_order.sql dosyasının içeriğini kopyalayıp yapıştırın\n4. "Run" butonuna tıklayın\n\nDosya konumu: proje kök dizininde /photo_order.sql')
+          // Fotoğrafları geri yükle
+          await fetchPhotos()
+          return
+        }
+        throw checkError
+      }
+
+      // Tüm mevcut kayıtları sil
+      const { error: deleteError } = await supabase
+        .from('photo_order')
+        .delete()
+        .gte('display_order', 0)
+
+      if (deleteError && deleteError.code !== 'PGRST116') {
+        console.warn('Eski kayıtlar silinirken hata:', deleteError)
+      }
+
+      // Yeni sıralamayı ekle
+      const { error: insertError } = await supabase
+        .from('photo_order')
+        .insert(orderData)
+
+      if (insertError) {
+        if (insertError.code === '23505') {
+          const upsertPromises = orderData.map(item =>
+            supabase
+              .from('photo_order')
+              .upsert(item, { onConflict: 'photo_url' })
+          )
+          const results = await Promise.all(upsertPromises)
+          const hasError = results.some(result => result.error)
+          if (hasError) {
+            const firstError = results.find(result => result.error)?.error
+            throw firstError
+          }
+        } else {
+          throw insertError
+        }
+      }
+      
+      // Başarılı olduğunda sayfayı yenile (sıralamayı görmek için)
+      // Sadece mevcut sayfada kal
+      console.log('Sıralama başarıyla kaydedildi')
+    } catch (error) {
+      console.error('Sıralama kaydedilemedi:', error)
+      // Hata durumunda fotoğrafları geri yükle
+      await fetchPhotos()
+      
+      let errorMessage = 'Sıralama kaydedilirken hata oluştu 😔'
+      const isTableNotFound = 
+        error.code === 'PGRST116' || 
+        error.message?.includes('does not exist') ||
+        error.message?.includes('Could not find the table') ||
+        error.message?.includes('schema cache')
+      
+      if (isTableNotFound) {
+        errorMessage = '⚠️ Veritabanı tablosu bulunamadı.\n\n📋 Yapmanız gerekenler:\n1. Supabase Dashboard\'a gidin\n2. SQL Editor\'ü açın\n3. photo_order.sql dosyasının içeriğini kopyalayıp yapıştırın\n4. "Run" butonuna tıklayın\n\nDosya konumu: proje kök dizininde /photo_order.sql'
+      } else if (error.message) {
+        errorMessage += `\n\nHata: ${error.message}`
+      }
+      
+      alert(errorMessage)
+    }
+  }
+
+  // Yukarı/aşağı ok butonları ile sıralama (mobil için)
+  const handleMovePhoto = async (index, direction) => {
+    if (currentUser?.role !== 'admin') return
+    
+    const newIndex = direction === 'up' ? index - 1 : index + 1
+    
+    // Sınır kontrolü
+    if (newIndex < 0 || newIndex >= uploadedPhotos.length) {
+      console.warn('Geçersiz hareket:', { index, direction, newIndex, length: uploadedPhotos.length })
+      return
+    }
+    
+    console.log('Fotoğraf taşınıyor:', { from: index, to: newIndex, direction })
+    await handlePhotoReorder(index, newIndex)
   }
 
   // LocalStorage'dan giriş durumunu kontrol et
@@ -217,7 +540,7 @@ function App() {
     }
   }
 
-  // Harita yeri ekleme
+  // Harita yeri ekleme/güncelleme
   const handleAddPlace = async (e) => {
     e.preventDefault()
     
@@ -227,27 +550,56 @@ function App() {
     }
 
     try {
-      const { error } = await supabase
-        .from('visited_places')
-        .insert([
-          {
+      if (editingPlace && editingPlace !== 'all') {
+        // Güncelleme
+        const { error } = await supabase
+          .from('visited_places')
+          .update({
             name: mapForm.name,
             description: mapForm.description || '',
-            username: currentUser.username
-          }
-        ])
+            created_at: mapForm.date ? new Date(mapForm.date).toISOString() : new Date().toISOString()
+          })
+          .eq('id', editingPlace)
 
-      if (error) throw error
+        if (error) throw error
+        alert('Yer güncellendi! 💕')
+      } else {
+        // Yeni ekleme
+        const { error } = await supabase
+          .from('visited_places')
+          .insert([
+            {
+              name: mapForm.name,
+              description: mapForm.description || '',
+              username: currentUser.username,
+              created_at: mapForm.date ? new Date(mapForm.date).toISOString() : new Date().toISOString()
+            }
+          ])
 
-      setMapForm({ name: '', description: '' })
+        if (error) throw error
+        alert('Yer eklendi! 💕')
+      }
+
+      setMapForm({ name: '', description: '', date: new Date().toISOString().split('T')[0] })
+      setEditingPlace(null)
       await fetchVisitedPlaces()
-      setCurrentPlacesPage(1) // Yeni yer eklendiğinde ilk sayfaya dön
+      setCurrentPlacesPage(1)
       setShowMapModal(false)
-      alert('Yer eklendi! 💕')
     } catch (error) {
-      console.error('Yer ekleme hatası:', error)
-      alert('Yer eklenirken hata oluştu 😔')
+      console.error('Yer işlemi hatası:', error)
+      alert('İşlem sırasında hata oluştu 😔')
     }
+  }
+
+  // Yer düzenleme modalını aç
+  const handleEditPlace = (place) => {
+    setEditingPlace(place.id)
+    setMapForm({
+      name: place.name,
+      description: place.description || '',
+      date: new Date(place.created_at).toISOString().split('T')[0]
+    })
+    setShowMapModal(true)
   }
 
   // Harita yeri silme
@@ -377,7 +729,7 @@ function App() {
     return [...selectedBaha, ...selectedAysenur].slice(0, maxBalls)
   }
 
-  // Timeline olayı ekleme
+  // Timeline olayı ekleme/güncelleme
   const handleAddTimeline = async (e) => {
     e.preventDefault()
     
@@ -387,32 +739,62 @@ function App() {
     }
 
     try {
-      const maxOrder = timelineEvents.length > 0 
-        ? Math.max(...timelineEvents.map(e => e.order_index))
-        : 0
-
-      const { error } = await supabase
-        .from('timeline_events')
-        .insert([
-          {
+      if (editingTimeline && editingTimeline !== 'all') {
+        // Güncelleme
+        const { error } = await supabase
+          .from('timeline_events')
+          .update({
             icon: timelineForm.icon,
             title: timelineForm.title,
             date: timelineForm.date,
-            description: timelineForm.description,
-            order_index: maxOrder + 1
-          }
-        ])
+            description: timelineForm.description
+          })
+          .eq('id', editingTimeline)
 
-      if (error) throw error
+        if (error) throw error
+        alert('Timeline olayı güncellendi! 💕')
+      } else {
+        // Yeni ekleme
+        const maxOrder = timelineEvents.length > 0 
+          ? Math.max(...timelineEvents.map(e => e.order_index))
+          : 0
+
+        const { error } = await supabase
+          .from('timeline_events')
+          .insert([
+            {
+              icon: timelineForm.icon,
+              title: timelineForm.title,
+              date: timelineForm.date,
+              description: timelineForm.description,
+              order_index: maxOrder + 1
+            }
+          ])
+
+        if (error) throw error
+        alert('Timeline olayı eklendi! 💕')
+      }
 
       setTimelineForm({ icon: '', title: '', date: '', description: '' })
+      setEditingTimeline(null)
       await fetchTimelineEvents()
       setShowTimelineModal(false)
-      alert('Timeline olayı eklendi! 💕')
     } catch (error) {
-      console.error('Timeline ekleme hatası:', error)
-      alert('Timeline eklenirken hata oluştu 😔')
+      console.error('Timeline işlemi hatası:', error)
+      alert('İşlem sırasında hata oluştu 😔')
     }
+  }
+
+  // Timeline olayı düzenleme modalını aç
+  const handleEditTimeline = (event) => {
+    setEditingTimeline(event.id)
+    setTimelineForm({
+      icon: event.icon,
+      title: event.title,
+      date: event.date,
+      description: event.description
+    })
+    setShowTimelineModal(true)
   }
 
   // Timeline olayı silme
@@ -521,31 +903,54 @@ function App() {
     setPassword('')
   }
 
-  // Not ekleme
+  // Not ekleme/güncelleme
   const handleAddNote = async (e) => {
     e.preventDefault()
     if (!newNote.trim()) return
 
     try {
-      const { error } = await supabase
-        .from('love_notes')
-        .insert([
-          {
-            author: currentUser.username,
+      if (editingNote) {
+        // Güncelleme
+        const { error } = await supabase
+          .from('love_notes')
+          .update({
             message: newNote.trim()
-          }
-        ])
+          })
+          .eq('id', editingNote)
 
-      if (error) throw error
+        if (error) throw error
+        alert('Not güncellendi! 💕')
+      } else {
+        // Yeni ekleme
+        const { error } = await supabase
+          .from('love_notes')
+          .insert([
+            {
+              author: currentUser.username,
+              message: newNote.trim()
+            }
+          ])
+
+        if (error) throw error
+        alert('Not eklendi! 💕')
+      }
 
       setNewNote('')
+      setEditingNote(null)
       await fetchNotes()
-      setCurrentNotesPage(1) // Yeni not eklendiğinde ilk sayfaya dön
-      alert('Not eklendi! 💕')
+      setCurrentNotesPage(1)
+      setShowNotesModal(false)
     } catch (error) {
-      console.error('Not eklenirken hata:', error)
-      alert('Not eklenirken hata oluştu 😔')
+      console.error('Not işlemi hatası:', error)
+      alert('İşlem sırasında hata oluştu 😔')
     }
+  }
+
+  // Not düzenleme modalını aç
+  const handleEditNote = (note) => {
+    setEditingNote(note.id)
+    setNewNote(note.message)
+    setShowNotesModal(true)
   }
 
   // Not silme
@@ -760,19 +1165,27 @@ function App() {
         </section>
 
         {/* Fotoğraf galerisi */}
-        <section className="photo-gallery">
+        <section className={`photo-gallery ${isEditMode ? 'is-edit-mode' : ''}`}>
           <div className="gallery-header">
             <h2 className="gallery-title">
               <span className="title-decoration">✨</span>
               Anılarımız
             </h2>
             {currentUser?.role === 'admin' && (
-              <button 
-                className="upload-button"
-                onClick={() => setShowUploadModal(true)}
-              >
-                📸 Fotoğraf Yükle
-              </button>
+              <div className="gallery-actions">
+                <button 
+                  className="upload-button"
+                  onClick={() => setShowUploadModal(true)}
+                >
+                  📸 Fotoğraf Yükle
+                </button>
+                <button 
+                  className={`edit-order-button ${isEditMode ? 'active' : ''}`}
+                  onClick={() => setIsEditMode(!isEditMode)}
+                >
+                  {isEditMode ? '✅ Bitti' : '✏️ Düzenle'}
+                </button>
+              </div>
             )}
           </div>
           <div className="gallery-grid">
@@ -786,17 +1199,64 @@ function App() {
                 <>
                   {currentPhotos.map((photo, index) => {
                     const globalIndex = startIndex + index
+                    const isDraggingThis = isDragging && draggedIndex === globalIndex
                     return (
-                      <div 
+              <div 
                         key={globalIndex} 
-                        className="photo-item"
-                        onClick={() => setLightboxImage(photo)}
-                      >
+                className={`photo-item ${isDraggingThis ? 'dragging' : ''} ${currentUser?.role === 'admin' ? 'draggable' : ''}`}
+                onClick={() => {
+                  if (!isDragging && !touchStartIndex && !isEditMode) {
+                    setLightboxImage(photo)
+                  }
+                }}
+                draggable={currentUser?.role === 'admin' && !isEditMode}
+                {...(currentUser?.role === 'admin' && !isEditMode ? {
+                  onDragStart: (e) => handleDragStart(e, globalIndex),
+                  onDragOver: handleDragOver,
+                  onDrop: (e) => handleDrop(e, globalIndex),
+                  onDragEnd: handleDragEnd,
+                  onTouchStart: (e) => handleTouchStart(e, globalIndex),
+                  onTouchMove: handleTouchMove,
+                  onTouchEnd: handleTouchEnd
+                } : {})}
+              >
                         <img src={photo} alt={`Anımız ${globalIndex + 1}`} />
-                        <div className="photo-overlay">
-                          <span className="overlay-text">💕</span>
-                        </div>
+                {currentUser?.role === 'admin' && (
+                  <>
+                    {!isEditMode && (
+                      <span className="drag-hint">⇅ Sürükle</span>
+                    )}
+                    {isEditMode && (
+                      <div className="mobile-order-buttons">
+                        {globalIndex > 0 && (
+                          <button 
+                            className="order-btn order-btn-up"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              handleMovePhoto(globalIndex, 'up')
+                            }}
+                            aria-label="Yukarı taşı"
+                          >
+                            ↑
+                          </button>
+                        )}
+                        {globalIndex < photos.length - 1 && (
+                          <button 
+                            className="order-btn order-btn-down"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              handleMovePhoto(globalIndex, 'down')
+                            }}
+                            aria-label="Aşağı taşı"
+                          >
+                            ↓
+                          </button>
+                        )}
                       </div>
+                    )}
+                  </>
+                )}
+              </div>
                     )
                   })}
                 </>
@@ -908,12 +1368,24 @@ function App() {
               Aşk Notlarımız
             </h2>
             {currentUser?.role === 'admin' && (
-              <button 
-                className="add-note-button"
-                onClick={() => setShowNotesModal(true)}
-              >
-                ✍️ Not Ekle
-              </button>
+              <div className="notes-actions">
+                <button 
+                  className="add-note-button"
+                  onClick={() => {
+                    setEditingNote(null)
+                    setNewNote('')
+                    setShowNotesModal(true)
+                  }}
+                >
+                  ✍️ Not Ekle
+                </button>
+                <button 
+                  className="edit-notes-button"
+                  onClick={() => setEditingNote(editingNote ? null : 'all')}
+                >
+                  {editingNote === 'all' ? '✅ Bitti' : '✏️ Düzenle'}
+                </button>
+              </div>
             )}
           </div>
           
@@ -936,34 +1408,44 @@ function App() {
                   return (
                     <>
                       {currentNotes.map((note) => (
-                        <div 
-                          key={note.id} 
-                          className={`note-card ${note.author === 'baha' ? 'note-baha' : 'note-aysenur'}`}
-                        >
-                          <div className="note-header-card">
-                            <span className="note-author">
-                              {note.author === 'baha' ? '💙 Baha' : '💕 Ayşenur'}
-                            </span>
-                            <span className="note-date">
-                              {new Date(note.created_at).toLocaleDateString('tr-TR', {
-                                day: 'numeric',
-                                month: 'long',
-                                year: 'numeric',
-                                hour: '2-digit',
-                                minute: '2-digit'
-                              })}
-                            </span>
-                          </div>
-                          <p className="note-message">{note.message}</p>
-                          {currentUser?.role === 'admin' && (
-                            <button 
-                              className="note-delete-btn"
-                              onClick={() => handleDeleteNote(note.id)}
-                            >
-                              🗑️
-                            </button>
-                          )}
-                        </div>
+                <div 
+                  key={note.id} 
+                  className={`note-card ${note.author === 'baha' ? 'note-baha' : 'note-aysenur'}`}
+                >
+                  <div className="note-header-card">
+                    <span className="note-author">
+                      {note.author === 'baha' ? '💙 Baha' : '💕 Ayşenur'}
+                    </span>
+                    <span className="note-date">
+                      {new Date(note.created_at).toLocaleDateString('tr-TR', {
+                        day: 'numeric',
+                        month: 'long',
+                        year: 'numeric',
+                        hour: '2-digit',
+                        minute: '2-digit'
+                      })}
+                    </span>
+                  </div>
+                  <p className="note-message">{note.message}</p>
+                  {currentUser?.role === 'admin' && editingNote === 'all' && (
+                    <>
+                      <button 
+                        className="note-edit-btn"
+                        onClick={() => handleEditNote(note)}
+                        title="Düzenle"
+                      >
+                        ✏️
+                      </button>
+                      <button 
+                        className="note-delete-btn"
+                        onClick={() => handleDeleteNote(note.id)}
+                        title="Sil"
+                      >
+                        🗑️
+                      </button>
+                    </>
+                  )}
+                </div>
                       ))}
                       
                       {/* Sayfa Navigasyonu */}
@@ -998,16 +1480,24 @@ function App() {
 
         {/* Not Ekleme Modal */}
         {showNotesModal && currentUser?.role === 'admin' && (
-          <div className="upload-modal-overlay" onClick={() => setShowNotesModal(false)}>
+          <div className="upload-modal-overlay" onClick={() => {
+            setShowNotesModal(false)
+            setEditingNote(null)
+            setNewNote('')
+          }}>
             <div className="upload-modal" onClick={(e) => e.stopPropagation()}>
               <button 
                 className="upload-modal-close" 
-                onClick={() => setShowNotesModal(false)}
+                onClick={() => {
+                  setShowNotesModal(false)
+                  setEditingNote(null)
+                  setNewNote('')
+                }}
               >
                 ✕
               </button>
-              <h2>Sevgilime Not Yaz 💌</h2>
-              <p>Sevgilinize özel bir mesaj bırakın!</p>
+              <h2>{editingNote && editingNote !== 'all' ? 'Not Düzenle ✏️' : 'Sevgilime Not Yaz 💌'}</h2>
+              <p>{editingNote && editingNote !== 'all' ? 'Notu güncelleyin!' : 'Sevgilinize özel bir mesaj bırakın!'}</p>
               <form onSubmit={handleAddNote} className="note-form">
                 <textarea
                   value={newNote}
@@ -1018,7 +1508,7 @@ function App() {
                   required
                 />
                 <button type="submit" className="login-button">
-                  💕 Not Ekle
+                  {editingNote && editingNote !== 'all' ? '💕 Güncelle' : '💕 Not Ekle'}
                 </button>
               </form>
             </div>
@@ -1043,7 +1533,7 @@ function App() {
               loading="lazy"
               title="Bizim Müziklerimiz"
             ></iframe>
-          </div>
+            </div>
         </section>
 
         {/* Günlük Kavanoz Bölümü */}
@@ -1075,10 +1565,10 @@ function App() {
                             style={position}
                           >
                             💙
-                          </div>
+            </div>
                         )
                       })}
-                  </div>
+            </div>
                 </div>
               </div>
               {(currentUser?.username === 'baha' || currentUser?.username === 'aysenur') && (
@@ -1207,12 +1697,24 @@ function App() {
               Birlikte Gittiğimiz Yerler
             </h2>
             {currentUser?.role === 'admin' && (
-              <button 
-                className="add-map-button"
-                onClick={() => setShowMapModal(true)}
-              >
-                📍 Yer Ekle
-              </button>
+              <div className="map-actions">
+                <button 
+                  className="add-map-button"
+                  onClick={() => {
+                    setEditingPlace(null)
+                    setMapForm({ name: '', description: '', date: new Date().toISOString().split('T')[0] })
+                    setShowMapModal(true)
+                  }}
+                >
+                  📍 Yer Ekle
+                </button>
+                <button 
+                  className="edit-places-button"
+                  onClick={() => setEditingPlace(editingPlace ? null : 'all')}
+                >
+                  {editingPlace ? '✅ Bitti' : '✏️ Düzenle'}
+                </button>
+              </div>
             )}
           </div>
           <div className="places-list-container">
@@ -1249,13 +1751,23 @@ function App() {
                                 })}
                               </span>
                             </div>
-                            {currentUser?.role === 'admin' && (
-                              <button 
-                                className="place-delete-btn"
-                                onClick={() => handleDeletePlace(place.id)}
-                              >
-                                🗑️
-                              </button>
+                            {currentUser?.role === 'admin' && editingPlace === 'all' && (
+                              <>
+                                <button 
+                                  className="place-edit-btn"
+                                  onClick={() => handleEditPlace(place)}
+                                  title="Düzenle"
+                                >
+                                  ✏️
+                                </button>
+                                <button 
+                                  className="place-delete-btn"
+                                  onClick={() => handleDeletePlace(place.id)}
+                                  title="Sil"
+                                >
+                                  🗑️
+                                </button>
+                              </>
                             )}
                           </div>
                         ))}
@@ -1296,12 +1808,24 @@ function App() {
           <div className="timeline-header-section">
             <h2 className="timeline-title">Özel Anlarımız</h2>
             {currentUser?.role === 'admin' && (
-              <button 
-                className="add-timeline-button"
-                onClick={() => setShowTimelineModal(true)}
-              >
-                ➕ Olay Ekle
-              </button>
+              <div className="timeline-actions">
+                <button 
+                  className="add-timeline-button"
+                  onClick={() => {
+                    setEditingTimeline(null)
+                    setTimelineForm({ icon: '', title: '', date: '', description: '' })
+                    setShowTimelineModal(true)
+                  }}
+                >
+                  ➕ Olay Ekle
+                </button>
+                <button 
+                  className="edit-timeline-button"
+                  onClick={() => setEditingTimeline(editingTimeline ? null : 'all')}
+                >
+                  {editingTimeline === 'all' ? '✅ Bitti' : '✏️ Düzenle'}
+                </button>
+              </div>
             )}
           </div>
           <div className="timeline-container">
@@ -1320,13 +1844,23 @@ function App() {
                     <h3>{event.title}</h3>
                     <p className="timeline-date">{event.date}</p>
                     <p>{event.description}</p>
-                    {currentUser?.role === 'admin' && (
-                      <button 
-                        className="timeline-delete-btn"
-                        onClick={() => handleDeleteTimeline(event.id)}
-                      >
-                        🗑️
-                      </button>
+                    {currentUser?.role === 'admin' && editingTimeline === 'all' && (
+                      <>
+                        <button 
+                          className="timeline-edit-btn"
+                          onClick={() => handleEditTimeline(event)}
+                          title="Düzenle"
+                        >
+                          ✏️
+                        </button>
+                        <button 
+                          className="timeline-delete-btn"
+                          onClick={() => handleDeleteTimeline(event.id)}
+                          title="Sil"
+                        >
+                          🗑️
+                        </button>
+                      </>
                     )}
                   </div>
                 </div>
@@ -1337,16 +1871,24 @@ function App() {
 
         {/* Timeline Ekleme Modal */}
         {showTimelineModal && currentUser?.role === 'admin' && (
-          <div className="upload-modal-overlay" onClick={() => setShowTimelineModal(false)}>
+          <div className="upload-modal-overlay" onClick={() => {
+            setShowTimelineModal(false)
+            setEditingTimeline(null)
+            setTimelineForm({ icon: '', title: '', date: '', description: '' })
+          }}>
             <div className="upload-modal timeline-modal" onClick={(e) => e.stopPropagation()}>
               <button 
                 className="upload-modal-close" 
-                onClick={() => setShowTimelineModal(false)}
+                onClick={() => {
+                  setShowTimelineModal(false)
+                  setEditingTimeline(null)
+                  setTimelineForm({ icon: '', title: '', date: '', description: '' })
+                }}
               >
                 ✕
               </button>
-              <h2>Özel An Ekle 💫</h2>
-              <p>Yeni bir özel anınızı timeline'a ekleyin!</p>
+              <h2>{editingTimeline && editingTimeline !== 'all' ? 'Özel An Düzenle ✏️' : 'Özel An Ekle 💫'}</h2>
+              <p>{editingTimeline && editingTimeline !== 'all' ? 'Özel anı güncelleyin!' : "Yeni bir özel anınızı timeline'a ekleyin!"}</p>
               <form onSubmit={handleAddTimeline} className="timeline-form">
                 <div className="input-group">
                   <label>İkon (Emoji)</label>
@@ -1391,7 +1933,7 @@ function App() {
                   />
                 </div>
                 <button type="submit" className="login-button">
-                  💕 Ekle
+                  {editingTimeline && editingTimeline !== 'all' ? '💕 Güncelle' : '💕 Ekle'}
                 </button>
               </form>
             </div>
@@ -1442,16 +1984,24 @@ function App() {
 
         {/* Harita Yer Ekleme Modal */}
         {showMapModal && currentUser?.role === 'admin' && (
-          <div className="upload-modal-overlay" onClick={() => setShowMapModal(false)}>
+          <div className="upload-modal-overlay" onClick={() => {
+            setShowMapModal(false)
+            setEditingPlace(null)
+            setMapForm({ name: '', description: '', date: new Date().toISOString().split('T')[0] })
+          }}>
             <div className="upload-modal map-modal" onClick={(e) => e.stopPropagation()}>
               <button 
                 className="upload-modal-close" 
-                onClick={() => setShowMapModal(false)}
+                onClick={() => {
+                  setShowMapModal(false)
+                  setEditingPlace(null)
+                  setMapForm({ name: '', description: '', date: new Date().toISOString().split('T')[0] })
+                }}
               >
                 ✕
               </button>
-              <h2>Yer Ekle 📍</h2>
-              <p>Birlikte gittiğiniz özel bir yeri haritaya ekleyin!</p>
+              <h2>{editingPlace && editingPlace !== 'all' ? 'Yer Düzenle ✏️' : 'Yer Ekle 📍'}</h2>
+              <p>{editingPlace && editingPlace !== 'all' ? 'Yer bilgilerini güncelleyin!' : 'Birlikte gittiğiniz özel bir yeri haritaya ekleyin!'}</p>
               <form onSubmit={handleAddPlace} className="map-form">
                 <div className="input-group">
                   <label>Yer Adı</label>
@@ -1473,8 +2023,18 @@ function App() {
                     rows="3"
                   />
                 </div>
+                <div className="input-group">
+                  <label>Tarih</label>
+                  <input
+                    type="date"
+                    value={mapForm.date}
+                    onChange={(e) => setMapForm({...mapForm, date: e.target.value})}
+                    max={new Date().toISOString().split('T')[0]}
+                    required
+                  />
+                </div>
                 <button type="submit" className="login-button">
-                  💕 Yer Ekle
+                  {editingPlace && editingPlace !== 'all' ? '💕 Güncelle' : '💕 Yer Ekle'}
                 </button>
               </form>
             </div>
