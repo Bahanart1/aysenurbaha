@@ -4,8 +4,8 @@
   "description": "Baha ve Ayşenur'un özel aşk sitesi",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#0f0c29",
-  "theme_color": "#0f0c29",
+  "background_color": "#0a0713",
+  "theme_color": "#0a0713",
   "orientation": "portrait-primary",
   "icons": [
     {
@@ -20,4 +20,3 @@
     }
   ]
 }
-

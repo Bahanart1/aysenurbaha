@@ -1,17 +1,37 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import './App.css'
 import { supabase } from './supabaseClient'
 
 // Türkiye saati (UTC+3) için bugünün tarihini döndürür
 const getTurkeyDateString = () => {
   const now = new Date()
-  // Türkiye saatini (Europe/Istanbul) kullanarak tarihi al
   const turkeyDate = new Date(now.toLocaleString('en-US', { timeZone: 'Europe/Istanbul' }))
   const year = turkeyDate.getFullYear()
   const month = String(turkeyDate.getMonth() + 1).padStart(2, '0')
   const day = String(turkeyDate.getDate()).padStart(2, '0')
   return `${year}-${month}-${day}`
 }
+
+const NAV_ITEMS = [
+  { id: 'gallery', label: 'Anılar' },
+  { id: 'notes', label: 'Notlar' },
+  { id: 'audio', label: 'Sesli' },
+  { id: 'jars', label: 'Kavanoz' },
+  { id: 'places', label: 'Yerler' },
+  { id: 'timeline', label: 'Zaman' }
+]
+
+const FLOATING_HEARTS = [
+  { left: 8, size: 13, duration: 19, delay: 0, drift: 30 },
+  { left: 24, size: 9, duration: 24, delay: 4, drift: -24 },
+  { left: 45, size: 15, duration: 21, delay: 8, drift: 18 },
+  { left: 62, size: 10, duration: 26, delay: 2, drift: -32 },
+  { left: 79, size: 12, duration: 22, delay: 11, drift: 26 },
+  { left: 92, size: 8, duration: 28, delay: 6, drift: -18 }
+]
+
+const THEME_ORDER = ['blush', 'vanilla', 'turquoise', 'night']
+const THEME_NAMES = { blush: 'Pembe', vanilla: 'Vanilya', turquoise: 'Turkuaz', night: 'Gece' }
 
 function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false)
@@ -20,7 +40,6 @@ function App() {
   const [password, setPassword] = useState('')
   const [loginError, setLoginError] = useState('')
   const [showRegister, setShowRegister] = useState(false)
-  const [hearts, setHearts] = useState([])
   const [currentDate, setCurrentDate] = useState(new Date())
   const [showLoveNote, setShowLoveNote] = useState(false)
   const [lightboxImage, setLightboxImage] = useState(null)
@@ -45,7 +64,7 @@ function App() {
   const [recordingStream, setRecordingStream] = useState(null)
   const [recordingTimer, setRecordingTimer] = useState(null)
   const [currentNotesPage, setCurrentNotesPage] = useState(1)
-  const notesPerPage = 4
+  const notesPerPage = 6
   const [currentAudioNotesPage, setCurrentAudioNotesPage] = useState(1)
   const audioNotesPerPage = 4
   const [currentPlacesPage, setCurrentPlacesPage] = useState(1)
@@ -76,13 +95,16 @@ function App() {
   const [touchStartY, setTouchStartY] = useState(null)
   const [touchStartIndex, setTouchStartIndex] = useState(null)
   const [isEditMode, setIsEditMode] = useState(false)
+  const [menuOpen, setMenuOpen] = useState(false)
+  const [scrolled, setScrolled] = useState(false)
+  const [activeSection, setActiveSection] = useState('hero')
   const [theme, setTheme] = useState(() => {
-    // localStorage'dan tema tercihini yükle
     const savedTheme = localStorage.getItem('lovesite_theme')
-    return savedTheme || 'purple' // Varsayılan mor
+    return THEME_ORDER.includes(savedTheme) ? savedTheme : 'blush'
   })
-  
-  
+
+  const lightboxTouchX = useRef(null)
+
   // Sadece yüklenen fotoğraflar
   const photos = uploadedPhotos
 
@@ -93,7 +115,6 @@ function App() {
 
   const fetchPhotos = async () => {
     try {
-      // Önce storage'dan tüm fotoğrafları çek
       const { data: storageData, error: storageError } = await supabase.storage
         .from('love-photos')
         .list('', {
@@ -116,27 +137,23 @@ function App() {
           }
         })
 
-      // Veritabanından sıralamayı çek
       const { data: orderData, error: orderError } = await supabase
         .from('photo_order')
         .select('*')
         .order('display_order', { ascending: true })
 
       if (orderError && orderError.code !== 'PGRST116') {
-        // PGRST116 = tablo bulunamadı hatası, bu durumda sıralama yok demektir
         console.warn('Sıralama verisi çekilemedi:', orderError)
       }
 
       let sortedPhotos = allPhotos
 
-      // Eğer sıralama verisi varsa, ona göre sırala
       if (orderData && orderData.length > 0) {
         const orderMap = new Map()
         orderData.forEach(item => {
           orderMap.set(item.photo_url, item.display_order)
         })
 
-        // Sıralama verisi olan fotoğrafları önce sırala, sonra diğerlerini ekle
         const orderedPhotos = []
         const unorderedPhotos = []
 
@@ -175,21 +192,17 @@ function App() {
 
       if (uploadError) throw uploadError
 
-      // Yeni fotoğrafın URL'ini al
       const { data: urlData } = supabase.storage
         .from('love-photos')
         .getPublicUrl(fileName)
 
-      // Yeni fotoğrafı sıralamanın en başına ekle
       try {
-        // Mevcut tüm sıralamaları çek
         const { data: existingOrders } = await supabase
           .from('photo_order')
           .select('*')
           .order('display_order', { ascending: true })
 
         if (existingOrders && existingOrders.length > 0) {
-          // Tüm mevcut sıralamaları 1 artır
           const updatePromises = existingOrders.map(item =>
             supabase
               .from('photo_order')
@@ -199,7 +212,6 @@ function App() {
           await Promise.all(updatePromises)
         }
 
-        // Yeni fotoğrafı en başa ekle
         await supabase
           .from('photo_order')
           .insert([{
@@ -208,12 +220,11 @@ function App() {
             display_order: 0
           }])
       } catch (orderError) {
-        // Sıralama tablosu yoksa veya hata varsa devam et
         console.warn('Sıralama kaydedilemedi:', orderError)
       }
 
       await fetchPhotos()
-      setCurrentPhotosPage(1) // Yeni fotoğraf yüklendiğinde ilk sayfaya dön
+      setCurrentPhotosPage(1)
       setShowUploadModal(false)
       alert('Fotoğraf başarıyla yüklendi! 💕')
     } catch (error) {
@@ -230,17 +241,14 @@ function App() {
     if (!confirmDelete) return
 
     try {
-      // URL'den dosya adını çıkar
       const fileName = photoUrl.split('/').pop().split('?')[0]
 
-      // Storage'dan sil
       const { error: storageError } = await supabase.storage
         .from('love-photos')
         .remove([fileName])
 
       if (storageError) throw storageError
 
-      // Veritabanından sıralama kaydını sil
       const { error: dbError } = await supabase
         .from('photo_order')
         .delete()
@@ -251,7 +259,6 @@ function App() {
       }
 
       await fetchPhotos()
-      // Eğer son sayfada tek fotoğraf varsa ve silinirse bir önceki sayfaya geç
       const totalPages = Math.ceil((photos.length - 1) / photosPerPage)
       if (currentPhotosPage > totalPages && totalPages > 0) {
         setCurrentPhotosPage(totalPages)
@@ -289,7 +296,6 @@ function App() {
       return
     }
 
-    // Ortak sıralama fonksiyonunu kullan
     await handlePhotoReorder(draggedIndex, dropIndex)
     setDraggedIndex(null)
   }
@@ -312,7 +318,6 @@ function App() {
 
   const handleTouchMove = (e) => {
     if (currentUser?.role !== 'admin' || touchStartIndex === null) return
-    // Sadece uzun basma sonrası scroll'u engelle
     if (isDragging) {
       e.preventDefault()
     }
@@ -327,16 +332,13 @@ function App() {
       return
     }
 
-    // Touch bittiğinde hangi elementin üzerinde olduğunu bul
     const touch = e.changedTouches[0]
     const elementBelow = document.elementFromPoint(touch.clientX, touch.clientY)
-    
-    // En yakın photo-item'ı bul
+
     let targetIndex = touchStartIndex
     if (elementBelow) {
       const photoItem = elementBelow.closest('.photo-item')
       if (photoItem) {
-        // Photo item'ın data-index'ini bul veya parent'tan index'i hesapla
         const allPhotos = document.querySelectorAll('.photo-item')
         const index = Array.from(allPhotos).indexOf(photoItem)
         if (index !== -1) {
@@ -353,9 +355,8 @@ function App() {
       return
     }
 
-    // Sürükle-bırak işlemini gerçekleştir
     await handlePhotoReorder(touchStartIndex, targetIndex)
-    
+
     setTouchStartY(null)
     setTouchStartIndex(null)
     setIsDragging(false)
@@ -366,56 +367,47 @@ function App() {
   const handlePhotoReorder = async (fromIndex, toIndex) => {
     if (currentUser?.role !== 'admin') return
 
-    // Sınır kontrolü
-    if (fromIndex < 0 || fromIndex >= uploadedPhotos.length || 
+    if (fromIndex < 0 || fromIndex >= uploadedPhotos.length ||
         toIndex < 0 || toIndex >= uploadedPhotos.length) {
       console.warn('Geçersiz index:', { fromIndex, toIndex, length: uploadedPhotos.length })
       return
     }
 
-    // Fotoğrafları yeniden sırala
     const newPhotos = [...uploadedPhotos]
     const draggedPhoto = newPhotos[fromIndex]
     newPhotos.splice(fromIndex, 1)
     newPhotos.splice(toIndex, 0, draggedPhoto)
 
-    // Önce state'i güncelle (anında görsel geri bildirim için)
     setUploadedPhotos(newPhotos)
 
-    // Veritabanına kaydet
     try {
-      // Yeni sıralamayı hazırla
       const orderData = newPhotos.map((url, index) => ({
         photo_url: url,
         photo_name: url.split('/').pop().split('?')[0],
         display_order: index
       }))
 
-      // Önce tablonun var olup olmadığını kontrol et
       const { error: checkError } = await supabase
         .from('photo_order')
         .select('photo_url')
         .limit(1)
 
-      // Tablo yoksa veya hata varsa
       if (checkError) {
-        const isTableNotFound = 
-          checkError.code === 'PGRST116' || 
+        const isTableNotFound =
+          checkError.code === 'PGRST116' ||
           checkError.message?.includes('does not exist') ||
           checkError.message?.includes('Could not find the table') ||
           checkError.message?.includes('schema cache')
-        
+
         if (isTableNotFound) {
           console.warn('photo_order tablosu bulunamadı.')
           alert('⚠️ Sıralama özelliği için veritabanı tablosu oluşturulmamış.\n\n📋 Yapmanız gerekenler:\n1. Supabase Dashboard\'a gidin\n2. SQL Editor\'ü açın\n3. photo_order.sql dosyasının içeriğini kopyalayıp yapıştırın\n4. "Run" butonuna tıklayın\n\nDosya konumu: proje kök dizininde /photo_order.sql')
-          // Fotoğrafları geri yükle
           await fetchPhotos()
           return
         }
         throw checkError
       }
 
-      // Tüm mevcut kayıtları sil
       const { error: deleteError } = await supabase
         .from('photo_order')
         .delete()
@@ -425,7 +417,6 @@ function App() {
         console.warn('Eski kayıtlar silinirken hata:', deleteError)
       }
 
-      // Yeni sıralamayı ekle
       const { error: insertError } = await supabase
         .from('photo_order')
         .insert(orderData)
@@ -447,28 +438,25 @@ function App() {
           throw insertError
         }
       }
-      
-      // Başarılı olduğunda sayfayı yenile (sıralamayı görmek için)
-      // Sadece mevcut sayfada kal
+
       console.log('Sıralama başarıyla kaydedildi')
     } catch (error) {
       console.error('Sıralama kaydedilemedi:', error)
-      // Hata durumunda fotoğrafları geri yükle
       await fetchPhotos()
-      
+
       let errorMessage = 'Sıralama kaydedilirken hata oluştu 😔'
-      const isTableNotFound = 
-        error.code === 'PGRST116' || 
+      const isTableNotFound =
+        error.code === 'PGRST116' ||
         error.message?.includes('does not exist') ||
         error.message?.includes('Could not find the table') ||
         error.message?.includes('schema cache')
-      
+
       if (isTableNotFound) {
         errorMessage = '⚠️ Veritabanı tablosu bulunamadı.\n\n📋 Yapmanız gerekenler:\n1. Supabase Dashboard\'a gidin\n2. SQL Editor\'ü açın\n3. photo_order.sql dosyasının içeriğini kopyalayıp yapıştırın\n4. "Run" butonuna tıklayın\n\nDosya konumu: proje kök dizininde /photo_order.sql'
       } else if (error.message) {
         errorMessage += `\n\nHata: ${error.message}`
       }
-      
+
       alert(errorMessage)
     }
   }
@@ -476,47 +464,33 @@ function App() {
   // Yukarı/aşağı ok butonları ile sıralama (mobil için)
   const handleMovePhoto = async (index, direction) => {
     if (currentUser?.role !== 'admin') return
-    
+
     const newIndex = direction === 'up' ? index - 1 : index + 1
-    
-    // Sınır kontrolü
+
     if (newIndex < 0 || newIndex >= uploadedPhotos.length) {
       console.warn('Geçersiz hareket:', { index, direction, newIndex, length: uploadedPhotos.length })
       return
     }
-    
-    console.log('Fotoğraf taşınıyor:', { from: index, to: newIndex, direction })
+
     await handlePhotoReorder(index, newIndex)
   }
 
-  // Tema değişikliğini body'ye uygula
+  // Tema değişikliğini uygula
   useEffect(() => {
-    document.body.className = `theme-${theme}`
+    document.documentElement.dataset.theme = theme
     localStorage.setItem('lovesite_theme', theme)
+    const meta = document.querySelector('meta[name="theme-color"]')
+    if (meta) {
+      const paper = getComputedStyle(document.documentElement).getPropertyValue('--paper').trim()
+      if (paper) meta.setAttribute('content', paper)
+    }
   }, [theme])
 
-  // Tema değiştirme fonksiyonu
   const toggleTheme = () => {
-    setTheme(prev => {
-      if (prev === 'purple') return 'pink'
-      if (prev === 'pink') return 'turquoise'
-      return 'purple'
-    })
+    setTheme(prev => THEME_ORDER[(THEME_ORDER.indexOf(prev) + 1) % THEME_ORDER.length])
   }
-  
-  // Tema emojisi
-  const getThemeEmoji = () => {
-    if (theme === 'purple') return '💜'
-    if (theme === 'pink') return '🩷'
-    return '🩵'
-  }
-  
-  // Tema adı
-  const getThemeName = () => {
-    if (theme === 'purple') return 'Mor'
-    if (theme === 'pink') return 'Pembe'
-    return 'Turkuaz'
-  }
+
+  const getThemeName = () => THEME_NAMES[theme]
 
   // LocalStorage'dan giriş durumunu kontrol et
   useEffect(() => {
@@ -528,7 +502,7 @@ function App() {
     }
   }, [])
 
-  // Notları çek
+  // Verileri çek
   useEffect(() => {
     if (isAuthenticated) {
       fetchNotes()
@@ -550,26 +524,24 @@ function App() {
         }
       }
     }
-    
-    const interval = setInterval(checkNewDay, 60000) // Her dakika kontrol et
+
+    const interval = setInterval(checkNewDay, 60000)
     checkNewDay()
-    
+
     return () => clearInterval(interval)
   }, [todayDate, isAuthenticated])
 
   const fetchNotes = async () => {
     try {
-      // Tüm notları çek ve client-side'da filtrele
       const { data, error } = await supabase
         .from('love_notes')
         .select('*')
         .order('created_at', { ascending: false })
 
       if (error) throw error
-      
-      // Sadece metin notları (message var, audio_url yok veya boş, deleted değil)
-      const textNotes = (data || []).filter(note => 
-        note.message && 
+
+      const textNotes = (data || []).filter(note =>
+        note.message &&
         (!note.audio_url || note.audio_url === '' || note.audio_url === null) &&
         (!note.deleted || note.deleted === false)
       )
@@ -582,25 +554,22 @@ function App() {
 
   const fetchAudioNotes = async () => {
     try {
-      // Sesli notlar tablosundan çek
       const { data, error } = await supabase
         .from('audio_notes')
         .select('*')
         .order('created_at', { ascending: false })
 
       if (error) {
-        // Eğer tablo yoksa eski sistemden çek
         if (error.code === 'PGRST116' || error.message?.includes('does not exist')) {
           console.warn('audio_notes tablosu bulunamadı, love_notes tablosundan çekiliyor...')
           const { data: oldData, error: oldError } = await supabase
             .from('love_notes')
             .select('*')
             .order('created_at', { ascending: false })
-          
+
           if (oldError) throw oldError
-          
-          // Sadece sesli notlar (audio_url var ve deleted değil)
-          const audioOnlyNotes = (oldData || []).filter(note => 
+
+          const audioOnlyNotes = (oldData || []).filter(note =>
             note.audio_url && (!note.deleted || note.deleted === false)
           )
           setAudioNotes(audioOnlyNotes)
@@ -608,16 +577,13 @@ function App() {
         }
         throw error
       }
-      
-      // Sadece silinmemiş olanları filtrele
-      const activeAudioNotes = (data || []).filter(note => 
+
+      const activeAudioNotes = (data || []).filter(note =>
         !note.deleted || note.deleted === false
       )
       setAudioNotes(activeAudioNotes)
-      console.log('Sesli notlar yüklendi:', activeAudioNotes.length, 'adet')
     } catch (error) {
       console.error('Sesli notlar yüklenemedi:', error)
-      // Hata durumunda boş array set et
       setAudioNotes([])
     }
   }
@@ -631,8 +597,7 @@ function App() {
         .order('order_index', { ascending: true })
 
       if (error) throw error
-      // Sadece silinmemiş olanları filtrele
-      const activeEvents = (data || []).filter(event => 
+      const activeEvents = (data || []).filter(event =>
         !event.deleted || event.deleted === false
       )
       setTimelineEvents(activeEvents)
@@ -650,8 +615,7 @@ function App() {
         .order('created_at', { ascending: false })
 
       if (error) throw error
-      // Sadece silinmemiş olanları filtrele
-      const activePlaces = (data || []).filter(place => 
+      const activePlaces = (data || []).filter(place =>
         !place.deleted || place.deleted === false
       )
       setVisitedPlaces(activePlaces)
@@ -663,7 +627,7 @@ function App() {
   // Harita yeri ekleme/güncelleme
   const handleAddPlace = async (e) => {
     e.preventDefault()
-    
+
     if (!mapForm.name) {
       alert('Yer adı gerekli! 💔')
       return
@@ -671,7 +635,6 @@ function App() {
 
     try {
       if (editingPlace && editingPlace !== 'all') {
-        // Güncelleme
         const { error } = await supabase
           .from('visited_places')
           .update({
@@ -684,7 +647,6 @@ function App() {
         if (error) throw error
         alert('Yer güncellendi! 💕')
       } else {
-        // Yeni ekleme
         const { error } = await supabase
           .from('visited_places')
           .insert([
@@ -711,7 +673,6 @@ function App() {
     }
   }
 
-  // Yer düzenleme modalını aç
   const handleEditPlace = (place) => {
     setEditingPlace(place.id)
     setMapForm({
@@ -736,7 +697,6 @@ function App() {
       if (error) throw error
 
       await fetchVisitedPlaces()
-      // Eğer son sayfada tek yer varsa ve silinirse bir önceki sayfaya geç
       const totalPages = Math.ceil((visitedPlaces.length - 1) / placesPerPage)
       if (currentPlacesPage > totalPages && totalPages > 0) {
         setCurrentPlacesPage(totalPages)
@@ -797,30 +757,25 @@ function App() {
   const getProportionalBalls = (affections, type, maxBalls = 100) => {
     const filtered = affections.filter(a => a.type === type)
     const total = filtered.length
-    
+
     if (total <= maxBalls) {
-      // Tarih sırasına göre sırala (en eskiden yeniye)
       return [...filtered].sort((a, b) => new Date(a.created_at) - new Date(b.created_at))
     }
-    
+
     const bahaBalls = filtered.filter(a => a.username === 'baha')
     const aysenurBalls = filtered.filter(a => a.username === 'aysenur')
-    
+
     const bahaCount = bahaBalls.length
     const aysenurCount = aysenurBalls.length
-    
-    // Oranları hesapla
+
     const bahaRatio = bahaCount / total
     const aysenurRatio = aysenurCount / total
-    
-    // Gösterilecek top sayılarını hesapla
+
     let bahaToShow = Math.round(maxBalls * bahaRatio)
     let aysenurToShow = Math.round(maxBalls * aysenurRatio)
-    
-    // Toplam 100'e tamamlamak için
+
     const totalToShow = bahaToShow + aysenurToShow
     if (totalToShow < maxBalls) {
-      // Eksik kalan sayıyı daha fazla topu olan tarafa ekle
       const remaining = maxBalls - totalToShow
       if (bahaCount > aysenurCount) {
         bahaToShow += remaining
@@ -828,7 +783,6 @@ function App() {
         aysenurToShow += remaining
       }
     } else if (totalToShow > maxBalls) {
-      // Fazla varsa azalt
       const excess = totalToShow - maxBalls
       if (bahaToShow > aysenurToShow) {
         bahaToShow -= excess
@@ -836,23 +790,20 @@ function App() {
         aysenurToShow -= excess
       }
     }
-    
-    // Topları tarih sırasına göre sırala (en eskiden yeniye)
+
     const sortedBaha = [...bahaBalls].sort((a, b) => new Date(a.created_at) - new Date(b.created_at))
     const sortedAysenur = [...aysenurBalls].sort((a, b) => new Date(a.created_at) - new Date(b.created_at))
-    
-    // En son eklenenlerden başlayarak seç
+
     const selectedBaha = sortedBaha.slice(-bahaToShow)
     const selectedAysenur = sortedAysenur.slice(-aysenurToShow)
-    
-    // Sabit sırayla döndür (Baha topları önce, sonra Ayşenur topları, her biri kendi içinde tarih sırasında)
+
     return [...selectedBaha, ...selectedAysenur].slice(0, maxBalls)
   }
 
   // Timeline olayı ekleme/güncelleme
   const handleAddTimeline = async (e) => {
     e.preventDefault()
-    
+
     if (!timelineForm.icon || !timelineForm.title || !timelineForm.date || !timelineForm.description) {
       alert('Tüm alanları doldurun! 💔')
       return
@@ -860,7 +811,6 @@ function App() {
 
     try {
       if (editingTimeline && editingTimeline !== 'all') {
-        // Güncelleme
         const { error } = await supabase
           .from('timeline_events')
           .update({
@@ -874,8 +824,7 @@ function App() {
         if (error) throw error
         alert('Timeline olayı güncellendi! 💕')
       } else {
-        // Yeni ekleme
-        const maxOrder = timelineEvents.length > 0 
+        const maxOrder = timelineEvents.length > 0
           ? Math.max(...timelineEvents.map(e => e.order_index))
           : 0
 
@@ -905,7 +854,6 @@ function App() {
     }
   }
 
-  // Timeline olayı düzenleme modalını aç
   const handleEditTimeline = (event) => {
     setEditingTimeline(event.id)
     setTimelineForm({
@@ -985,8 +933,8 @@ function App() {
       const { data, error } = await supabase
         .from('users')
         .insert([
-          { 
-            username: username.toLowerCase(), 
+          {
+            username: username.toLowerCase(),
             password: password,
             role: 'visitor'
           }
@@ -1021,6 +969,7 @@ function App() {
     localStorage.removeItem('lovesite_user')
     setUsername('')
     setPassword('')
+    setMenuOpen(false)
   }
 
   // Ses kaydetmeye başla
@@ -1051,7 +1000,6 @@ function App() {
       setRecordingTime(0)
       setAudioChunks([])
 
-      // Zamanlayıcı başlat
       const timer = setInterval(() => {
         setRecordingTime(prev => prev + 1)
       }, 1000)
@@ -1062,7 +1010,6 @@ function App() {
     }
   }
 
-  // Ses kaydını durdur
   const stopRecording = () => {
     if (mediaRecorder && isRecording) {
       mediaRecorder.stop()
@@ -1074,7 +1021,6 @@ function App() {
     }
   }
 
-  // Ses kaydını iptal et
   const cancelRecording = () => {
     if (mediaRecorder && isRecording) {
       mediaRecorder.stop()
@@ -1093,10 +1039,9 @@ function App() {
     setMediaRecorder(null)
   }
 
-  // Ses dosyasını yükle ve not ekle
+  // Ses dosyasını yükle
   const handleAddNoteWithAudio = async (audioBlob) => {
     try {
-      // Ses dosyasını Supabase Storage'a yükle
       const fileName = `audio_${Date.now()}_${Math.random().toString(36).substring(7)}.webm`
       const { error: uploadError } = await supabase.storage
         .from('love-photos')
@@ -1106,7 +1051,6 @@ function App() {
 
       if (uploadError) throw uploadError
 
-      // Ses dosyasının URL'ini al
       const { data: urlData } = supabase.storage
         .from('love-photos')
         .getPublicUrl(`audio/${fileName}`)
@@ -1127,8 +1071,7 @@ function App() {
     }
 
     try {
-      if (editingNote) {
-        // Güncelleme
+      if (editingNote && editingNote !== 'all') {
         const { error } = await supabase
           .from('love_notes')
           .update({
@@ -1139,8 +1082,7 @@ function App() {
         if (error) throw error
         alert('Not güncellendi! 💕')
       } else {
-        // Yeni ekleme (sadece metin, audio_url yok)
-        const { data, error } = await supabase
+        const { error } = await supabase
           .from('love_notes')
           .insert([
             {
@@ -1151,13 +1093,7 @@ function App() {
           ])
           .select()
 
-        if (error) {
-          console.error('Not ekleme hatası:', error)
-          console.error('Hata detayları:', JSON.stringify(error, null, 2))
-          throw error
-        }
-        
-        console.log('Not başarıyla eklendi:', data)
+        if (error) throw error
         alert('Not eklendi! 💕')
       }
 
@@ -1168,7 +1104,6 @@ function App() {
       setShowNotesModal(false)
     } catch (error) {
       console.error('Not işlemi hatası:', error)
-      console.error('Hata detayları:', JSON.stringify(error, null, 2))
       const errorMessage = error.message || error.code || error.hint || 'Bilinmeyen hata'
       alert(`Not eklenirken hata oluştu: ${errorMessage}\n\nLütfen konsolu kontrol edin (F12) 😔`)
     }
@@ -1177,19 +1112,17 @@ function App() {
   // Sesli not ekleme/güncelleme
   const handleAddAudioNote = async (e) => {
     e.preventDefault()
-    
+
     if (audioChunks.length === 0) {
       alert('Lütfen bir ses kaydı yapın! 💔')
       return
     }
 
     try {
-      // Ses dosyasını yükle
       const audioBlob = new Blob(audioChunks, { type: 'audio/webm' })
       const audioUrl = await handleAddNoteWithAudio(audioBlob)
 
-      if (editingAudioNote) {
-        // Güncelleme - önce yeni tabloyu dene
+      if (editingAudioNote && editingAudioNote !== 'all') {
         let { error } = await supabase
           .from('audio_notes')
           .update({
@@ -1198,7 +1131,6 @@ function App() {
           })
           .eq('id', editingAudioNote)
 
-        // Eğer tablo yoksa eski tabloyu kullan
         if (error && (error.code === 'PGRST116' || error.message?.includes('does not exist'))) {
           const { error: oldError } = await supabase
             .from('love_notes')
@@ -1206,15 +1138,14 @@ function App() {
               audio_url: audioUrl
             })
             .eq('id', editingAudioNote)
-          
+
           if (oldError) throw oldError
         } else if (error) {
           throw error
         }
-        
+
         alert('Sesli not güncellendi! 💕')
       } else {
-        // Yeni ekleme - önce yeni tabloyu dene
         let { error } = await supabase
           .from('audio_notes')
           .insert([
@@ -1225,7 +1156,6 @@ function App() {
             }
           ])
 
-        // Eğer tablo yoksa eski tabloyu kullan
         if (error && (error.code === 'PGRST116' || error.message?.includes('does not exist'))) {
           const { error: oldError } = await supabase
             .from('love_notes')
@@ -1236,12 +1166,12 @@ function App() {
                 audio_url: audioUrl
               }
             ])
-          
+
           if (oldError) throw oldError
         } else if (error) {
           throw error
         }
-        
+
         alert('Sesli not eklendi! 💕')
       }
 
@@ -1259,7 +1189,6 @@ function App() {
     }
   }
 
-  // Not düzenleme modalını aç
   const handleEditNote = (note) => {
     setEditingNote(note.id)
     setNewNote(note.message || '')
@@ -1267,6 +1196,15 @@ function App() {
     setRecordingTime(0)
     setIsRecording(false)
     setShowNotesModal(true)
+  }
+
+  const handleEditAudioNote = (note) => {
+    setEditingAudioNote(note.id)
+    setAudioNoteTitle(note.title || '')
+    setAudioChunks([])
+    setRecordingTime(0)
+    setIsRecording(false)
+    setShowAudioNotesModal(true)
   }
 
   // Not silme (soft delete)
@@ -1283,7 +1221,6 @@ function App() {
       if (error) throw error
 
       await fetchNotes()
-      // Eğer son sayfada tek not varsa ve silinirse bir önceki sayfaya geç
       const totalPages = Math.ceil((notes.length - 1) / notesPerPage)
       if (currentNotesPage > totalPages && totalPages > 0) {
         setCurrentNotesPage(totalPages)
@@ -1301,26 +1238,23 @@ function App() {
     if (!confirmDelete) return
 
     try {
-      // Önce yeni tabloyu dene
       let { error } = await supabase
         .from('audio_notes')
         .update({ deleted: true })
         .eq('id', noteId)
 
-      // Eğer tablo yoksa eski tabloyu kullan
       if (error && (error.code === 'PGRST116' || error.message?.includes('does not exist'))) {
         const { error: oldError } = await supabase
           .from('love_notes')
           .update({ deleted: true })
           .eq('id', noteId)
-        
+
         if (oldError) throw oldError
       } else if (error) {
         throw error
       }
 
       await fetchAudioNotes()
-      // Eğer son sayfada tek not varsa ve silinirse bir önceki sayfaya geç
       const totalPages = Math.ceil((audioNotes.length - 1) / audioNotesPerPage)
       if (currentAudioNotesPage > totalPages && totalPages > 0) {
         setCurrentAudioNotesPage(totalPages)
@@ -1332,7 +1266,6 @@ function App() {
     }
   }
 
-  // Ses süresini formatla (dakika:saniye)
   const formatTime = (seconds) => {
     if (!seconds || isNaN(seconds)) return '0:00'
     const mins = Math.floor(seconds / 60)
@@ -1340,30 +1273,74 @@ function App() {
     return `${mins}:${secs.toString().padStart(2, '0')}`
   }
 
-  // Rastgele kalpler oluştur
-  useEffect(() => {
-    const interval = setInterval(() => {
-      const newHeart = {
-        id: Date.now(),
-        left: Math.random() * 100,
-        animationDuration: 3 + Math.random() * 2,
-        size: 10 + Math.random() * 20
-      }
-      setHearts(prev => [...prev.slice(-20), newHeart])
-    }, 500)
-
-    return () => clearInterval(interval)
-  }, [])
-
   // Tarih güncellemesi
   useEffect(() => {
     const timer = setInterval(() => setCurrentDate(new Date()), 1000)
     return () => clearInterval(timer)
   }, [])
 
+  // Scroll ilerleme çubuğu + header durumu
+  useEffect(() => {
+    const onScroll = () => {
+      const el = document.documentElement
+      const max = Math.max(1, el.scrollHeight - el.clientHeight)
+      el.style.setProperty('--scroll-progress', String(el.scrollTop / max))
+      setScrolled(el.scrollTop > 20)
+    }
+    onScroll()
+    window.addEventListener('scroll', onScroll, { passive: true })
+    return () => window.removeEventListener('scroll', onScroll)
+  }, [])
+
+  // Scroll ile ortaya çıkma animasyonları
+  useEffect(() => {
+    const io = new IntersectionObserver((entries) => {
+      entries.forEach(entry => {
+        if (entry.isIntersecting) {
+          entry.target.classList.add('in')
+          io.unobserve(entry.target)
+        }
+      })
+    }, { rootMargin: '0px 0px -6% 0px', threshold: 0.06 })
+
+    const scan = () => {
+      document
+        .querySelectorAll('[data-reveal]:not(.in), [data-mask]:not(.in), [data-clip]:not(.in)')
+        .forEach(el => io.observe(el))
+    }
+
+    scan()
+    const mo = new MutationObserver(scan)
+    mo.observe(document.body, { childList: true, subtree: true })
+
+    return () => {
+      io.disconnect()
+      mo.disconnect()
+    }
+  }, [])
+
+  // Aktif bölümü takip et
+  useEffect(() => {
+    if (!isAuthenticated) return
+
+    const sections = ['hero', ...NAV_ITEMS.map(i => i.id)]
+      .map(id => document.getElementById(id))
+      .filter(Boolean)
+
+    const io = new IntersectionObserver((entries) => {
+      entries.forEach(entry => {
+        if (entry.isIntersecting) setActiveSection(entry.target.id)
+      })
+    }, { rootMargin: '-45% 0px -50% 0px' })
+
+    sections.forEach(s => io.observe(s))
+    return () => io.disconnect()
+  }, [isAuthenticated, notes.length, photos.length])
+
   // Klavye kontrolleri (ESC, ok tuşları)
   useEffect(() => {
     const handleKeyDown = (e) => {
+      if (e.key === 'Escape' && menuOpen) setMenuOpen(false)
       if (!lightboxImage) return
 
       if (e.key === 'Escape') {
@@ -1381,496 +1358,507 @@ function App() {
 
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [lightboxImage, photos])
+  }, [lightboxImage, photos, menuOpen])
 
-  // Lightbox açıkken scroll'u engelle
+  // Modal / menü açıkken scroll kilidi
+  const anyOverlayOpen = Boolean(
+    lightboxImage || menuOpen || showUploadModal || showNotesModal ||
+    showAudioNotesModal || showTimelineModal || showMapModal
+  )
+
   useEffect(() => {
-    if (lightboxImage) {
-      document.body.style.overflow = 'hidden'
-    } else {
-      document.body.style.overflow = 'auto'
+    document.body.classList.toggle('is-locked', anyOverlayOpen)
+    return () => document.body.classList.remove('is-locked')
+  }, [anyOverlayOpen])
+
+  const goToSection = (id) => {
+    setMenuOpen(false)
+    const el = document.getElementById(id)
+    if (el) {
+      window.scrollTo({
+        top: el.getBoundingClientRect().top + window.scrollY - 78,
+        behavior: 'smooth'
+      })
     }
-    return () => {
-      document.body.style.overflow = 'auto'
-    }
-  }, [lightboxImage])
+  }
+
+  const showLightboxNeighbor = (step) => {
+    const currentIndex = photos.indexOf(lightboxImage)
+    if (currentIndex === -1 || photos.length === 0) return
+    const nextIndex = (currentIndex + step + photos.length) % photos.length
+    setLightboxImage(photos[nextIndex])
+  }
 
   // Birlikte geçirilen süre hesaplama
-  const startDate = new Date('2025-09-08') // Sevgili olma tarihimiz
-  const daysTogether = Math.floor((currentDate - startDate) / (1000 * 60 * 60 * 24))
+  const startDate = new Date('2025-09-08T00:00:00+03:00')
+  const elapsed = currentDate - startDate
+  const daysTogether = Math.floor(elapsed / 86400000)
+  const hoursTogether = Math.floor(elapsed / 3600000) % 24
+  const minutesTogether = Math.floor(elapsed / 60000) % 60
+  const secondsTogether = Math.floor(elapsed / 1000) % 60
+
+  const pad = (n) => String(n).padStart(2, '0')
+
+  const ambience = (
+    <div className="ambience" aria-hidden="true">
+      <span className="blush blush-1" />
+      <span className="blush blush-2" />
+      <div className="hearts">
+        {FLOATING_HEARTS.map((h, i) => (
+          <span
+            key={i}
+            className="heart"
+            style={{
+              left: `${h.left}%`,
+              fontSize: `${h.size}px`,
+              animationDuration: `${h.duration}s`,
+              animationDelay: `${h.delay}s`,
+              '--drift': `${h.drift}px`
+            }}
+          >
+            ♥
+          </span>
+        ))}
+      </div>
+      <span className="grain" />
+    </div>
+  )
+
+  const themeButton = (extraClass = '') => (
+    <button
+      className={`theme-btn ${extraClass}`}
+      onClick={toggleTheme}
+      aria-label="Tema değiştir"
+      title={`Tema: ${getThemeName()}`}
+    >
+      <span className="theme-swatch" />
+      <span className="theme-btn-name">{getThemeName()}</span>
+    </button>
+  )
 
   // Giriş yapılmadıysa login ekranını göster
   if (!isAuthenticated) {
     return (
-      <>
-        {/* Tema Değiştirme Butonu - Login Sayfasında */}
-        <button 
-          className="theme-toggle-button"
-          onClick={toggleTheme}
-          aria-label="Tema değiştir"
-          title={`Tema: ${getThemeName()}`}
-        >
-          {getThemeEmoji()}
-        </button>
-        <div className="login-container">
-        <div className="login-box">
-          <div className="login-header">
-            <div className="login-icon">💕</div>
-            <h1>Baha & Ayşenur</h1>
-            <p>Özel Aşk Sitesi</p>
+      <div className="auth">
+        {ambience}
+
+        <div className="auth-bar">
+          <span className="eyebrow">♥ Baha & Ayşenur</span>
+          {themeButton()}
+        </div>
+
+        <div className="auth-main">
+          <div>
+            <h1 className="auth-title">
+              <span data-mask><span>Baha</span></span>
+              <span data-mask style={{ '--i': 1 }}><span><em>♥</em> Ayşenur</span></span>
+            </h1>
+            <p className="auth-lede" data-reveal style={{ '--i': 3 }}>
+              İki kişilik minik bir dünya. Fotoğraflar, sesler, notlar ve
+              sonsuza kadar saklayacağımız bütün güzel anlar.
+            </p>
+            <p className="auth-rule" data-reveal style={{ '--i': 4 }}>
+              ♥ 08 Eylül 2025'ten beri
+            </p>
           </div>
-          <form onSubmit={showRegister ? handleRegister : handleLogin} className="login-form">
-            <div className="input-group">
-              <label>Kullanıcı Adı</label>
-              <input
-                type="text"
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
-                placeholder={showRegister ? "Kullanıcı adı seçin" : "Kullanıcı adınız"}
-                required
-              />
+
+          <div className="auth-card" data-reveal style={{ '--i': 2 }}>
+            <div className="auth-card-head">
+              <span className="eyebrow">{showRegister ? 'Kayıt' : 'Giriş'}</span>
+              <h2>{showRegister ? 'Aramıza katıl' : 'Tekrar hoş geldin'}</h2>
             </div>
-            <div className="input-group">
-              <label>Şifre</label>
-              <input
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder={showRegister ? "Şifre oluşturun (min 4 karakter)" : "Şifreniz"}
-                required
-              />
-            </div>
-            {loginError && <div className="login-error">{loginError}</div>}
-            <button type="submit" className="login-button">
-              {showRegister ? '📝 Kayıt Ol' : '💖 Giriş Yap'}
-            </button>
-            <button 
-              type="button" 
-              className="toggle-auth-button"
-              onClick={() => {
-                setShowRegister(!showRegister)
-                setLoginError('')
-                setUsername('')
-                setPassword('')
-              }}
-            >
-              {showRegister ? 'Zaten hesabım var, Giriş Yap' : 'Hesabım yok, Kayıt Ol'}
-            </button>
-          </form>
-          {!showRegister && (
-            <div className="login-footer-message">
-              💌 Bu aşka tanıklık etmek istiyorsanız kayıt olabilirsiniz
-            </div>
-          )}
+
+            <form onSubmit={showRegister ? handleRegister : handleLogin} className="auth-form">
+              <label className="field">
+                <span className="field-label">Kullanıcı Adı</span>
+                <input
+                  type="text"
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
+                  placeholder={showRegister ? 'Kullanıcı adı seçin' : 'Kullanıcı adınız'}
+                  autoComplete="username"
+                  required
+                />
+              </label>
+
+              <label className="field">
+                <span className="field-label">Şifre</span>
+                <input
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder={showRegister ? 'En az 4 karakter' : 'Şifreniz'}
+                  autoComplete={showRegister ? 'new-password' : 'current-password'}
+                  required
+                />
+              </label>
+
+              {loginError && <div className="form-error">{loginError}</div>}
+
+              <button type="submit" className="btn btn-primary btn-block">
+                {showRegister ? 'Kayıt Ol' : 'Giriş Yap'}
+              </button>
+
+              <button
+                type="button"
+                className="btn btn-quiet btn-block"
+                onClick={() => {
+                  setShowRegister(!showRegister)
+                  setLoginError('')
+                  setUsername('')
+                  setPassword('')
+                }}
+              >
+                {showRegister ? 'Zaten hesabım var' : 'Hesabım yok, kayıt ol'}
+              </button>
+            </form>
+
+            <p className="auth-foot">
+              Fotoğraflarımız ve notlarımız sadece giriş yapanlara görünür 🤍
+            </p>
+          </div>
         </div>
       </div>
-      </>
     )
   }
 
   return (
     <div className="app">
-      {/* Animasyonlu kalpler */}
-      <div className="hearts-container">
-        {hearts.map(heart => (
-          <div
-            key={heart.id}
-            className="floating-heart"
-            style={{
-              left: `${heart.left}%`,
-              animationDuration: `${heart.animationDuration}s`,
-              fontSize: `${heart.size}px`
-            }}
-          >
-            {getThemeEmoji()}
+      {ambience}
+      <div className="scroll-progress" aria-hidden="true" />
+
+      <header className={`nav ${scrolled ? 'is-scrolled' : ''}`}>
+        <div className="nav-inner">
+          <button className="brand" onClick={() => goToSection('hero')}>
+            <span className="brand-mark">♥</span>
+            <span className="brand-text">
+              <strong>Baha & Ayşenur</strong>
+              <small>{daysTogether} gün</small>
+            </span>
+          </button>
+
+          <nav className="nav-links">
+            {NAV_ITEMS.map(item => (
+              <button
+                key={item.id}
+                className={`nav-link ${activeSection === item.id ? 'is-active' : ''}`}
+                onClick={() => goToSection(item.id)}
+              >
+                {item.label}
+              </button>
+            ))}
+          </nav>
+
+          <div className="nav-actions">
+            {themeButton()}
+            <button className="btn btn-ghost btn-sm nav-logout" onClick={handleLogout}>
+              Çıkış
+            </button>
+            <button
+              className={`burger ${menuOpen ? 'is-open' : ''}`}
+              onClick={() => setMenuOpen(!menuOpen)}
+              aria-label="Menü"
+              aria-expanded={menuOpen}
+            >
+              <span /><span /><span />
+            </button>
           </div>
-        ))}
+        </div>
+      </header>
+
+      <div className={`menu-overlay ${menuOpen ? 'is-open' : ''}`}>
+        <nav className="menu-list">
+          {NAV_ITEMS.map((item, i) => (
+            <button
+              key={item.id}
+              className="menu-item"
+              style={{ '--i': i }}
+              onClick={() => goToSection(item.id)}
+            >
+              <span className="menu-item-index">0{i + 1}</span>
+              <span className="menu-item-label">{item.label}</span>
+            </button>
+          ))}
+        </nav>
+        <div className="menu-foot" style={{ '--i': NAV_ITEMS.length }}>
+          <span>{currentUser?.username === 'baha' ? 'Baha' : currentUser?.username === 'aysenur' ? 'Ayşenur' : currentUser?.username}</span>
+          <button className="btn btn-quiet btn-sm" onClick={handleLogout}>Çıkış Yap</button>
+        </div>
       </div>
 
-        {/* Tema Değiştirme Butonu */}
-        <button 
-          className="theme-toggle-button"
-          onClick={toggleTheme}
-          aria-label="Tema değiştir"
-          title={`Tema: ${getThemeName()}`}
-        >
-          {getThemeEmoji()}
-        </button>
+      <main className="content">
+        {/* Hero */}
+        <section id="hero" className="hero">
+          <div className="hero-meta" data-reveal>
+            <span>08 Eylül 2025</span>
+            <span className="dot" />
+            <span>Bizim küçük dünyamız</span>
+          </div>
 
-      {/* Ana içerik */}
-      <div className="content">
-        {/* Başlık bölümü */}
-        <header className="hero-section">
-          <h1 className="main-title">
-            <span className="name">Baha</span>
-            <span className="heart-icon">{getThemeEmoji()}</span>
-            <span className="name">Ayşenur</span>
+          <h1 className="hero-title">
+            <span data-mask><span>Baha</span></span>
+            <span data-mask className="line-2" style={{ '--i': 1 }}><span><em>♥</em> Ayşenur</span></span>
           </h1>
-          <p className="family-name">Şenel</p>
-          <p className="subtitle">Bizim Hikayemiz</p>
-          <div className="days-counter">
-            <div className="counter-box">
-              <span className="counter-number">{daysTogether}</span>
-              <span className="counter-label">Gündür Sevgiliyiz 💕</span>
+          <p className="hero-surname" data-reveal style={{ '--i': 3 }}>Şenel</p>
+
+          <div className="hero-grid">
+            <p className="hero-lede" data-reveal style={{ '--i': 4 }}>
+              Bütün güzel anlarımız burada: fotoğraflar, sesler, notlar
+              ve birlikte gezdiğimiz her yer.
+              <br />
+              Sadece ikimize ait.{'\u00A0'}🤍
+            </p>
+
+            <div className="counter" data-reveal style={{ '--i': 5 }}>
+              <span className="counter-value">{daysTogether}</span>
+              <span className="counter-caption">gündür birlikte</span>
+              <div className="counter-clock">
+                <span>{pad(hoursTogether)} SA</span>
+                <span>{pad(minutesTogether)} DK</span>
+                <span>{pad(secondsTogether)} SN</span>
+              </div>
             </div>
           </div>
-        </header>
 
-        {/* Aşk mesajı bölümü */}
-        <section className="love-message">
-          <div className="message-card">
-            <div className="card-decoration">💖</div>
-            <h2>Sevgilim Ayşenur'a,</h2>
-            <p>
-              Seninle geçirdiğim her an hayatımın en güzel anları. 
-              Gülüşün benim en sevdiğim melodi, gözlerin benim en sevdiğim manzara.
-              Her yeni günde seninle olmak beni dünyanın en şanslı insanı yapıyor.
-            </p>
-            <p>
-              Bu site sadece sana olan aşkımın küçük bir göstergesi. 
-              Seninle paylaştığımız tüm anılar kalbimde sonsuza kadar yaşayacak.
-            </p>
-            <p className="signature">Seni sonsuza dek seven, Baha ❤️</p>
-            <button className="love-button" onClick={() => setShowLoveNote(!showLoveNote)}>
-              {showLoveNote ? '💝 Mesajı Gizle' : '💌 Özel Mesaj Aç'}
-            </button>
-            {showLoveNote && (
-              <div className="hidden-note">
-                <p>Her sabah gözlerimi açtığımda ilk düşündüğüm sensin... 
-                Her gece uyumadan önce son düşündüğüm de... 
-                Sen benim hayatımın en güzel armağanısın. 
-                Seninle her an özel, seninle her gün bayram. 
-                Seni çok ama çok seviyorum! 💕</p>
-              </div>
-            )}
+          <div className="marquee" data-reveal style={{ '--i': 6 }}>
+            <div className="marquee-track">
+              {Array.from({ length: 2 }).map((_, k) => (
+                <span key={k}>
+                  Seni seviyorum ♥ {daysTogether} gündür birlikte ♥ Sonsuza dek ♥ Seni seviyorum ♥ {daysTogether} gündür birlikte ♥ Sonsuza dek ♥
+                </span>
+              ))}
+            </div>
           </div>
+        </section>
+
+        {/* Aşk mektubu */}
+        <section id="letter" className="section">
+          <article className="letter">
+            <div className="letter-side" data-reveal>
+              <span className="eyebrow">Mektup</span>
+              <h2 className="letter-title">Sevgilim<br />Ayşenur'a,</h2>
+            </div>
+
+            <div className="letter-body" data-reveal style={{ '--i': 1 }}>
+              <p>
+                Seninle geçirdiğim her an hayatımın en güzel anları.
+                Gülüşün benim en sevdiğim melodi, gözlerin benim en sevdiğim manzara.
+                Her yeni günde seninle olmak beni dünyanın en şanslı insanı yapıyor.
+              </p>
+              <p>
+                Bu site sadece sana olan aşkımın küçük bir göstergesi.
+                Seninle paylaştığımız tüm anılar kalbimde sonsuza kadar yaşayacak.
+              </p>
+              <p className="letter-sign">Seni sonsuza dek seven, Baha</p>
+
+              <div className={`letter-secret ${showLoveNote ? 'is-open' : ''}`}>
+                <div className="letter-secret-inner">
+                  <p>
+                    Her sabah gözlerimi açtığımda ilk düşündüğüm sensin...
+                    Her gece uyumadan önce son düşündüğüm de...
+                    Sen benim hayatımın en güzel armağanısın.
+                    Seninle her an özel, seninle her gün bayram.
+                    Seni çok ama çok seviyorum.
+                  </p>
+                </div>
+              </div>
+
+              <div className="letter-actions">
+                <button className="btn" onClick={() => setShowLoveNote(!showLoveNote)}>
+                  {showLoveNote ? 'Mesajı Gizle' : 'Özel Mesajı Aç'}
+                </button>
+              </div>
+            </div>
+          </article>
         </section>
 
         {/* Fotoğraf galerisi */}
-        <section className={`photo-gallery ${isEditMode ? 'is-edit-mode' : ''}`}>
-          <div className="gallery-header">
-            <h2 className="gallery-title">
-              <span className="title-decoration">✨</span>
-              Anılarımız
-            </h2>
+        <section id="gallery" className={`section ${isEditMode ? 'is-edit-mode' : ''}`}>
+          <div className="sec-head" data-reveal>
+            <div className="sec-head-text">
+              <span className="eyebrow">Galeri</span>
+              <h2 className="sec-title">Anı<em>larımız</em></h2>
+              <p className="sec-sub">{photos.length} kare, tek bir hikâye</p>
+            </div>
             {currentUser?.role === 'admin' && (
-              <div className="gallery-actions">
-                <button 
-                  className="upload-button"
-                  onClick={() => setShowUploadModal(true)}
-                >
-                  📸 Fotoğraf Yükle
+              <div className="sec-actions">
+                <button className="btn btn-primary btn-sm" onClick={() => setShowUploadModal(true)}>
+                  Fotoğraf Yükle
                 </button>
-                <button 
-                  className={`edit-order-button ${isEditMode ? 'active' : ''}`}
+                <button
+                  className={`btn btn-ghost btn-sm ${isEditMode ? 'is-active' : ''}`}
                   onClick={() => setIsEditMode(!isEditMode)}
                 >
-                  {isEditMode ? '✅ Bitti' : '✏️ Düzenle'}
+                  {isEditMode ? 'Bitti' : 'Sırala'}
                 </button>
               </div>
             )}
           </div>
-          <div className="gallery-grid">
-            {(() => {
-              const totalPages = Math.ceil(photos.length / photosPerPage)
-              const startIndex = (currentPhotosPage - 1) * photosPerPage
-              const endIndex = startIndex + photosPerPage
-              const currentPhotos = photos.slice(startIndex, endIndex)
-              
-              return (
-                <>
-                  {currentPhotos.map((photo, index) => {
+
+          {photos.length === 0 ? (
+            <div className="empty" data-reveal>
+              <p>Henüz fotoğraf yok</p>
+              {currentUser?.role === 'admin' && <span>İlk anınızı yükleyin</span>}
+            </div>
+          ) : (
+            <>
+              <div className="gallery-grid">
+                {(() => {
+                  const startIndex = (currentPhotosPage - 1) * photosPerPage
+                  const currentPhotos = photos.slice(startIndex, startIndex + photosPerPage)
+
+                  return currentPhotos.map((photo, index) => {
                     const globalIndex = startIndex + index
                     const isDraggingThis = isDragging && draggedIndex === globalIndex
                     return (
-              <div 
-                        key={globalIndex} 
-                className={`photo-item ${isDraggingThis ? 'dragging' : ''} ${currentUser?.role === 'admin' ? 'draggable' : ''}`}
-                onClick={() => {
-                  if (!isDragging && !touchStartIndex && !isEditMode) {
-                    setLightboxImage(photo)
-                  }
-                }}
-                draggable={currentUser?.role === 'admin' && !isEditMode}
-                {...(currentUser?.role === 'admin' && !isEditMode ? {
-                  onDragStart: (e) => handleDragStart(e, globalIndex),
-                  onDragOver: handleDragOver,
-                  onDrop: (e) => handleDrop(e, globalIndex),
-                  onDragEnd: handleDragEnd,
-                  onTouchStart: (e) => handleTouchStart(e, globalIndex),
-                  onTouchMove: handleTouchMove,
-                  onTouchEnd: handleTouchEnd
-                } : {})}
-              >
-                        <img src={photo} alt={`Anımız ${globalIndex + 1}`} />
-                {currentUser?.role === 'admin' && (
-                  <>
-                    {!isEditMode && (
-                      <span className="drag-hint">⇅ Sürükle</span>
-                    )}
-                    {isEditMode && (
-                      <div className="mobile-order-buttons">
-                        {globalIndex > 0 && (
-                          <button 
-                            className="order-btn order-btn-up"
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              handleMovePhoto(globalIndex, 'up')
-                            }}
-                            aria-label="Yukarı taşı"
-                          >
-                            ↑
-                          </button>
+                      <figure
+                        key={globalIndex}
+                        className={`photo-item ${isDraggingThis ? 'dragging' : ''} ${currentUser?.role === 'admin' ? 'draggable' : ''}`}
+                        data-reveal
+                        style={{ '--i': index }}
+                        onClick={() => {
+                          if (!isDragging && !touchStartIndex && !isEditMode) {
+                            setLightboxImage(photo)
+                          }
+                        }}
+                        draggable={currentUser?.role === 'admin' && !isEditMode}
+                        {...(currentUser?.role === 'admin' && !isEditMode ? {
+                          onDragStart: (e) => handleDragStart(e, globalIndex),
+                          onDragOver: handleDragOver,
+                          onDrop: (e) => handleDrop(e, globalIndex),
+                          onDragEnd: handleDragEnd,
+                          onTouchStart: (e) => handleTouchStart(e, globalIndex),
+                          onTouchMove: handleTouchMove,
+                          onTouchEnd: handleTouchEnd
+                        } : {})}
+                      >
+                        <img src={photo} alt={`Anımız ${globalIndex + 1}`} loading="lazy" />
+                        <span className="photo-index">{String(globalIndex + 1).padStart(2, '0')}</span>
+                        {currentUser?.role === 'admin' && isEditMode && (
+                          <div className="order-controls">
+                            <button
+                              className="order-btn"
+                              disabled={globalIndex === 0}
+                              onClick={(e) => { e.stopPropagation(); handleMovePhoto(globalIndex, 'up') }}
+                              aria-label="Yukarı taşı"
+                            >↑</button>
+                            <button
+                              className="order-btn"
+                              disabled={globalIndex === photos.length - 1}
+                              onClick={(e) => { e.stopPropagation(); handleMovePhoto(globalIndex, 'down') }}
+                              aria-label="Aşağı taşı"
+                            >↓</button>
+                          </div>
                         )}
-                        {globalIndex < photos.length - 1 && (
-                          <button 
-                            className="order-btn order-btn-down"
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              handleMovePhoto(globalIndex, 'down')
-                            }}
-                            aria-label="Aşağı taşı"
-                          >
-                            ↓
-                          </button>
-                        )}
-                      </div>
-                    )}
-                  </>
-                )}
-              </div>
+                      </figure>
                     )
-                  })}
-                </>
-              )
-            })()}
-          </div>
-          
-          {/* Fotoğraf Sayfalama */}
-          {photos.length > photosPerPage && (
-            <div className="photos-pagination">
-              {(() => {
-                const totalPages = Math.ceil(photos.length / photosPerPage)
-                return (
-                  <>
-                    <button
-                      className="pagination-btn"
-                      onClick={() => setCurrentPhotosPage(prev => Math.max(1, prev - 1))}
-                      disabled={currentPhotosPage === 1}
-                    >
-                      ← Önceki
-                    </button>
-                    <span className="pagination-info">
-                      Sayfa {currentPhotosPage} / {totalPages}
-                    </span>
-                    <button
-                      className="pagination-btn"
-                      onClick={() => setCurrentPhotosPage(prev => Math.min(totalPages, prev + 1))}
-                      disabled={currentPhotosPage === totalPages}
-                    >
-                      Sonraki →
-                    </button>
-                  </>
-                )
-              })()}
-            </div>
+                  })
+                })()}
+              </div>
+
+              {photos.length > photosPerPage && (
+                <Pagination
+                  page={currentPhotosPage}
+                  total={Math.ceil(photos.length / photosPerPage)}
+                  onChange={setCurrentPhotosPage}
+                />
+              )}
+            </>
           )}
         </section>
 
-        {/* Lightbox Modal */}
-        {lightboxImage && (
-          <div className="lightbox-overlay" onClick={() => setLightboxImage(null)}>
-            <button 
-              className="lightbox-close" 
-              onClick={() => setLightboxImage(null)}
-              aria-label="Kapat"
-            >
-              ✕
-            </button>
-            
-            <div className="lightbox-counter">
-              {photos.indexOf(lightboxImage) + 1} / {photos.length}
+        {/* Aşk notları */}
+        <section id="notes" className="section">
+          <div className="sec-head" data-reveal>
+            <div className="sec-head-text">
+              <span className="eyebrow">Kelimeler</span>
+              <h2 className="sec-title">Aşk <em>Notlarımız</em></h2>
+              <p className="sec-sub">Birbirimize bıraktığımız izler</p>
             </div>
-
             {currentUser?.role === 'admin' && (
-              <button 
-                className="lightbox-delete" 
-                onClick={(e) => {
-                  e.stopPropagation()
-                  handlePhotoDelete(lightboxImage)
-                }}
-                aria-label="Sil"
-              >
-                🗑️
-              </button>
-            )}
-
-            <div className="lightbox-content" onClick={(e) => e.stopPropagation()}>
-              <img src={lightboxImage} alt="Büyük görsel" />
-            </div>
-            
-            <div className="lightbox-nav">
-              <button 
-                className="lightbox-prev"
-                onClick={(e) => {
-                  e.stopPropagation()
-                  const currentIndex = photos.indexOf(lightboxImage)
-                  const prevIndex = currentIndex === 0 ? photos.length - 1 : currentIndex - 1
-                  setLightboxImage(photos[prevIndex])
-                }}
-                aria-label="Önceki"
-              >
-                ‹
-              </button>
-              <button 
-                className="lightbox-next"
-                onClick={(e) => {
-                  e.stopPropagation()
-                  const currentIndex = photos.indexOf(lightboxImage)
-                  const nextIndex = currentIndex === photos.length - 1 ? 0 : currentIndex + 1
-                  setLightboxImage(photos[nextIndex])
-                }}
-                aria-label="Sonraki"
-              >
-                ›
-              </button>
-            </div>
-            
-            <div className="lightbox-hint">
-              ESC ile kapatabilir, ← → ok tuşları ile gezinebilirsiniz
-            </div>
-          </div>
-        )}
-
-        {/* Not Tahtası Bölümü */}
-        <section className="notes-section">
-          <div className="notes-header">
-            <h2 className="notes-title">
-              <span style={{ animation: 'none' }}>✍️</span>
-              Aşk Notlarımız
-            </h2>
-            {currentUser?.role === 'admin' && (
-              <div className="notes-actions">
-                <button 
-                  className="add-note-button"
-                  onClick={() => {
-                    setEditingNote(null)
-                    setNewNote('')
-                    setShowNotesModal(true)
-                  }}
+              <div className="sec-actions">
+                <button
+                  className="btn btn-primary btn-sm"
+                  onClick={() => { setEditingNote(null); setNewNote(''); setShowNotesModal(true) }}
                 >
-                  ✍️ Not Ekle
+                  Not Ekle
                 </button>
-                <button 
-                  className="edit-notes-button"
+                <button
+                  className={`btn btn-ghost btn-sm ${editingNote === 'all' ? 'is-active' : ''}`}
                   onClick={() => setEditingNote(editingNote ? null : 'all')}
                 >
-                  {editingNote === 'all' ? '✅ Bitti' : '✏️ Düzenle'}
+                  {editingNote === 'all' ? 'Bitti' : 'Düzenle'}
                 </button>
               </div>
             )}
           </div>
-          
-          <div className="notes-container">
-            {notes.length === 0 ? (
-              <div className="no-notes">
-                <p>Henüz not eklenmemiş 💭</p>
-                {currentUser?.role === 'admin' && (
-                  <p className="note-hint">İlk notu siz ekleyin!</p>
-                )}
-              </div>
-            ) : (
-              <>
+
+          {notes.length === 0 ? (
+            <div className="empty" data-reveal>
+              <p>Henüz not eklenmemiş</p>
+              {currentUser?.role === 'admin' && <span>İlk notu siz yazın</span>}
+            </div>
+          ) : (
+            <>
+              <div className="notes-grid">
                 {(() => {
-                  const totalPages = Math.ceil(notes.length / notesPerPage)
                   const startIndex = (currentNotesPage - 1) * notesPerPage
-                  const endIndex = startIndex + notesPerPage
-                  const currentNotes = notes.slice(startIndex, endIndex)
-                  
-                  return (
-                    <>
-                      {currentNotes.map((note) => (
-                <div 
-                  key={note.id} 
-                  className={`note-card ${note.author === 'baha' ? 'note-baha' : 'note-aysenur'}`}
-                >
-                  <div className="note-header-card">
-                    <span className="note-author">
-                      {note.author === 'baha' ? '💙 Baha' : '💕 Ayşenur'}
-                    </span>
-                    <span className="note-date">
-                      {new Date(note.created_at).toLocaleDateString('tr-TR', {
-                        day: 'numeric',
-                        month: 'long',
-                        year: 'numeric',
-                        hour: '2-digit',
-                        minute: '2-digit'
-                      })}
-                    </span>
-                  </div>
-                  <p className="note-message">{note.message}</p>
-                  {currentUser?.role === 'admin' && editingNote === 'all' && (
-                    <>
-                      <button 
-                        className="note-edit-btn"
-                        onClick={() => handleEditNote(note)}
-                        title="Düzenle"
-                      >
-                        ✏️
-                      </button>
-                      <button 
-                        className="note-delete-btn"
-                        onClick={() => handleDeleteNote(note.id)}
-                        title="Sil"
-                      >
-                        🗑️
-                      </button>
-                    </>
-                  )}
-                </div>
-                      ))}
-                      
-                      {/* Sayfa Navigasyonu */}
-                      {totalPages > 1 && (
-                        <div className="notes-pagination">
-                          <button
-                            className="pagination-btn"
-                            onClick={() => setCurrentNotesPage(prev => Math.max(1, prev - 1))}
-                            disabled={currentNotesPage === 1}
-                          >
-                            ← Önceki
-                          </button>
-                          <span className="pagination-info">
-                            Sayfa {currentNotesPage} / {totalPages}
+                  return notes.slice(startIndex, startIndex + notesPerPage).map((note, i) => (
+                    <article
+                      key={note.id}
+                      className={`note-card ${note.author === 'baha' ? 'is-baha' : 'is-aysenur'}`}
+                      data-reveal
+                      style={{ '--i': i }}
+                    >
+                      <header className="note-top">
+                        <span className="note-who">
+                          <span className="avatar">{note.author === 'baha' ? 'B' : 'A'}</span>
+                          <span className="note-meta">
+                            <strong>{note.author === 'baha' ? 'Baha' : 'Ayşenur'}</strong>
                           </span>
-                          <button
-                            className="pagination-btn"
-                            onClick={() => setCurrentNotesPage(prev => Math.min(totalPages, prev + 1))}
-                            disabled={currentNotesPage === totalPages}
-                          >
-                            Sonraki →
-                          </button>
+                        </span>
+                        <time>
+                          {new Date(note.created_at).toLocaleDateString('tr-TR', {
+                            day: 'numeric', month: 'long', year: 'numeric',
+                            hour: '2-digit', minute: '2-digit'
+                          })}
+                        </time>
+                      </header>
+                      <p className="note-body">{note.message}</p>
+                      {currentUser?.role === 'admin' && editingNote === 'all' && (
+                        <div className="card-tools">
+                          <button className="icon-btn" onClick={() => handleEditNote(note)} title="Düzenle">✎</button>
+                          <button className="icon-btn is-danger" onClick={() => handleDeleteNote(note.id)} title="Sil">✕</button>
                         </div>
                       )}
-                    </>
-                  )
+                    </article>
+                  ))
                 })()}
-              </>
-            )}
-          </div>
+              </div>
+
+              {notes.length > notesPerPage && (
+                <Pagination
+                  page={currentNotesPage}
+                  total={Math.ceil(notes.length / notesPerPage)}
+                  onChange={setCurrentNotesPage}
+                />
+              )}
+            </>
+          )}
         </section>
 
-        {/* Sesli Notlar Bölümü */}
-        <section className="notes-section audio-notes-section">
-          <div className="notes-header">
-            <h2 className="notes-title">
-              <span style={{ animation: 'none' }}>🎤</span>
-              Sesli Notlarımız
-            </h2>
+        {/* Sesli notlar */}
+        <section id="audio" className="section">
+          <div className="sec-head" data-reveal>
+            <div className="sec-head-text">
+              <span className="eyebrow">Sesler</span>
+              <h2 className="sec-title">Sesli <em>Notlarımız</em></h2>
+              <p className="sec-sub">Yazıya sığmayan her şey</p>
+            </div>
             {currentUser?.role === 'admin' && (
-              <div className="notes-actions">
-                <button 
-                  className="add-note-button"
+              <div className="sec-actions">
+                <button
+                  className="btn btn-primary btn-sm"
                   onClick={() => {
                     setEditingAudioNote(null)
                     setAudioNoteTitle('')
@@ -1880,866 +1868,755 @@ function App() {
                     setShowAudioNotesModal(true)
                   }}
                 >
-                  🎤 Sesli Not Ekle
+                  Sesli Not Ekle
                 </button>
-                <button 
-                  className="edit-notes-button"
+                <button
+                  className={`btn btn-ghost btn-sm ${editingAudioNote === 'all' ? 'is-active' : ''}`}
                   onClick={() => setEditingAudioNote(editingAudioNote ? null : 'all')}
                 >
-                  {editingAudioNote === 'all' ? '✅ Bitti' : '✏️ Düzenle'}
+                  {editingAudioNote === 'all' ? 'Bitti' : 'Düzenle'}
                 </button>
               </div>
             )}
           </div>
-          
-          <div className="notes-container">
-            {audioNotes.length === 0 ? (
-              <div className="no-notes">
-                <p>Henüz sesli not eklenmemiş 💭</p>
-                {currentUser?.role === 'admin' && (
-                  <p className="note-hint">İlk sesli notu siz ekleyin!</p>
-                )}
-              </div>
-            ) : (
-              <>
+
+          {audioNotes.length === 0 ? (
+            <div className="empty" data-reveal>
+              <p>Henüz sesli not eklenmemiş</p>
+              {currentUser?.role === 'admin' && <span>İlk kaydı siz yapın</span>}
+            </div>
+          ) : (
+            <>
+              <div className="notes-grid">
                 {(() => {
-                  const totalPages = Math.ceil(audioNotes.length / audioNotesPerPage)
                   const startIndex = (currentAudioNotesPage - 1) * audioNotesPerPage
-                  const endIndex = startIndex + audioNotesPerPage
-                  const currentAudioNotes = audioNotes.slice(startIndex, endIndex)
-                  
-                  return (
-                    <>
-                      {currentAudioNotes.map((note) => (
-                <div 
-                  key={note.id} 
-                  className={`note-card audio-note-card ${note.author === 'baha' ? 'note-baha' : 'note-aysenur'}`}
-                >
-                  <div className="note-header-card">
-                    <span className="note-author">
-                      {note.author === 'baha' ? '💙 Baha' : '💕 Ayşenur'}
-                    </span>
-                    <span className="note-date">
-                      {new Date(note.created_at).toLocaleDateString('tr-TR', {
-                        day: 'numeric',
-                        month: 'long',
-                        year: 'numeric',
-                        hour: '2-digit',
-                        minute: '2-digit'
-                      })}
-                    </span>
-                  </div>
-                  {note.title && (
-                    <h3 className="audio-note-title">{note.title}</h3>
-                  )}
-                  {note.audio_url && (
-                    <div className="audio-note-container">
-                      <audio 
-                        id={`audio-${note.id}`}
-                        src={note.audio_url}
-                        preload="metadata"
-                        onLoadedMetadata={(e) => {
-                          const duration = e.target.duration
-                          setAudioDuration(prev => ({ ...prev, [note.id]: duration }))
-                        }}
-                        onTimeUpdate={(e) => {
-                          const currentTime = e.target.currentTime
-                          setAudioProgress(prev => ({ ...prev, [note.id]: currentTime }))
-                        }}
-                        onEnded={() => {
-                          setIsPlayingAudio(null)
-                          setAudioProgress(prev => ({ ...prev, [note.id]: 0 }))
-                        }}
-                      />
-                      <div className="audio-player-wrapper">
-                        <button
-                          className="audio-play-button-small"
-                          onClick={() => {
-                            const audio = document.getElementById(`audio-${note.id}`)
-                            if (isPlayingAudio === note.id) {
-                              audio.pause()
-                              setIsPlayingAudio(null)
-                            } else {
-                              // Önceki sesi durdur
-                              if (isPlayingAudio) {
-                                const prevAudio = document.getElementById(`audio-${isPlayingAudio}`)
-                                if (prevAudio) {
-                                  prevAudio.pause()
-                                  prevAudio.currentTime = 0
-                                }
-                                setIsPlayingAudio(null)
-                              }
-                              audio.play()
-                              setIsPlayingAudio(note.id)
-                            }
-                          }}
-                        >
-                          {isPlayingAudio === note.id ? '⏸️' : '▶️'}
-                        </button>
-                        <div className="audio-controls">
-                          <div className="audio-time">
-                            {formatTime(audioProgress[note.id] || 0)} / {formatTime(audioDuration[note.id] || 0)}
-                          </div>
-                          <input
-                            type="range"
-                            min="0"
-                            max={audioDuration[note.id] || 0}
-                            value={audioProgress[note.id] || 0}
-                            onChange={(e) => {
-                              const audio = document.getElementById(`audio-${note.id}`)
-                              const newTime = parseFloat(e.target.value)
-                              audio.currentTime = newTime
-                              setAudioProgress(prev => ({ ...prev, [note.id]: newTime }))
-                            }}
-                            className="audio-progress-bar"
-                            step="0.1"
-                          />
-                        </div>
-                      </div>
-                    </div>
-                  )}
-                  {currentUser?.role === 'admin' && editingAudioNote === 'all' && (
-                    <>
-                      <button 
-                        className="note-edit-btn"
-                        onClick={() => handleEditAudioNote(note)}
-                        title="Düzenle"
+                  return audioNotes.slice(startIndex, startIndex + audioNotesPerPage).map((note, i) => {
+                    const playing = isPlayingAudio === note.id
+                    const dur = audioDuration[note.id] || 0
+                    const pos = audioProgress[note.id] || 0
+                    return (
+                      <article
+                        key={note.id}
+                        className={`note-card is-audio ${note.author === 'baha' ? 'is-baha' : 'is-aysenur'} ${playing ? 'is-playing' : ''}`}
+                        data-reveal
+                        style={{ '--i': i }}
                       >
-                        ✏️
-                      </button>
-                      <button 
-                        className="note-delete-btn"
-                        onClick={() => handleDeleteAudioNote(note.id)}
-                        title="Sil"
-                      >
-                        🗑️
-                      </button>
-                    </>
-                  )}
-                </div>
-                      ))}
-                      
-                      {/* Sayfa Navigasyonu */}
-                      {totalPages > 1 && (
-                        <div className="notes-pagination">
-                          <button
-                            className="pagination-btn"
-                            onClick={() => setCurrentAudioNotesPage(prev => Math.max(1, prev - 1))}
-                            disabled={currentAudioNotesPage === 1}
-                          >
-                            ← Önceki
-                          </button>
-                          <span className="pagination-info">
-                            Sayfa {currentAudioNotesPage} / {totalPages}
+                        <header className="note-top">
+                          <span className="note-who">
+                            <span className="avatar">{note.author === 'baha' ? 'B' : 'A'}</span>
+                            <span className="note-meta">
+                              <strong>{note.author === 'baha' ? 'Baha' : 'Ayşenur'}</strong>
+                            </span>
                           </span>
-                          <button
-                            className="pagination-btn"
-                            onClick={() => setCurrentAudioNotesPage(prev => Math.min(totalPages, prev + 1))}
-                            disabled={currentAudioNotesPage === totalPages}
-                          >
-                            Sonraki →
-                          </button>
-                        </div>
-                      )}
-                    </>
-                  )
+                          <time>
+                            {new Date(note.created_at).toLocaleDateString('tr-TR', {
+                              day: 'numeric', month: 'long', year: 'numeric',
+                              hour: '2-digit', minute: '2-digit'
+                            })}
+                          </time>
+                        </header>
+
+                        {note.title && <h3 className="audio-title">{note.title}</h3>}
+
+                        {note.audio_url && (
+                          <div className="player">
+                            <audio
+                              id={`audio-${note.id}`}
+                              src={note.audio_url}
+                              preload="metadata"
+                              onLoadedMetadata={(e) => {
+                                const duration = e.target.duration
+                                setAudioDuration(prev => ({ ...prev, [note.id]: duration }))
+                              }}
+                              onTimeUpdate={(e) => {
+                                setAudioProgress(prev => ({ ...prev, [note.id]: e.target.currentTime }))
+                              }}
+                              onEnded={() => {
+                                setIsPlayingAudio(null)
+                                setAudioProgress(prev => ({ ...prev, [note.id]: 0 }))
+                              }}
+                            />
+                            <button
+                              className="player-play"
+                              aria-label={playing ? 'Duraklat' : 'Oynat'}
+                              onClick={() => {
+                                const audio = document.getElementById(`audio-${note.id}`)
+                                if (playing) {
+                                  audio.pause()
+                                  setIsPlayingAudio(null)
+                                } else {
+                                  if (isPlayingAudio) {
+                                    const prevAudio = document.getElementById(`audio-${isPlayingAudio}`)
+                                    if (prevAudio) {
+                                      prevAudio.pause()
+                                      prevAudio.currentTime = 0
+                                    }
+                                    setIsPlayingAudio(null)
+                                  }
+                                  audio.play()
+                                  setIsPlayingAudio(note.id)
+                                }
+                              }}
+                            >
+                              {playing ? '❚❚' : '▶'}
+                            </button>
+
+                            <div className="player-body">
+                              <div className="wave" aria-hidden="true">
+                                {Array.from({ length: 28 }).map((_, b) => (
+                                  <span key={b} style={{ '--b': b, '--h': `${20 + ((b * 37) % 70)}%` }} />
+                                ))}
+                                <span
+                                  className="wave-mask"
+                                  style={{ width: `${dur ? 100 - (pos / dur) * 100 : 100}%` }}
+                                />
+                              </div>
+                              <div className="player-row">
+                                <span className="player-time">{formatTime(pos)} / {formatTime(dur)}</span>
+                                <input
+                                  type="range"
+                                  min="0"
+                                  max={dur || 0}
+                                  value={pos}
+                                  onChange={(e) => {
+                                    const audio = document.getElementById(`audio-${note.id}`)
+                                    const newTime = parseFloat(e.target.value)
+                                    audio.currentTime = newTime
+                                    setAudioProgress(prev => ({ ...prev, [note.id]: newTime }))
+                                  }}
+                                  className="player-seek"
+                                  step="0.1"
+                                  aria-label="Ses konumu"
+                                />
+                              </div>
+                            </div>
+                          </div>
+                        )}
+
+                        {currentUser?.role === 'admin' && editingAudioNote === 'all' && (
+                          <div className="card-tools">
+                            <button className="icon-btn" onClick={() => handleEditAudioNote(note)} title="Düzenle">✎</button>
+                            <button className="icon-btn is-danger" onClick={() => handleDeleteAudioNote(note.id)} title="Sil">✕</button>
+                          </div>
+                        )}
+                      </article>
+                    )
+                  })
                 })()}
-              </>
-            )}
+              </div>
+
+              {audioNotes.length > audioNotesPerPage && (
+                <Pagination
+                  page={currentAudioNotesPage}
+                  total={Math.ceil(audioNotes.length / audioNotesPerPage)}
+                  onChange={setCurrentAudioNotesPage}
+                />
+              )}
+            </>
+          )}
+        </section>
+
+        {/* Aşk kavanozu */}
+        <section id="jars" className="section">
+          <div className="sec-head" data-reveal>
+            <div className="sec-head-text">
+              <span className="eyebrow">Bugün</span>
+              <h2 className="sec-title">Aşk <em>Kavanozu</em></h2>
+              <p className="sec-sub">Her gün sıfırlanır, her gün yeniden dolar</p>
+            </div>
+          </div>
+
+          <div className="jars">
+            {[
+              { type: 'ozeldim', title: 'Özledim', emoji: '💙', cta: 'Özledim' },
+              { type: 'opucuk', title: 'Öpücük', emoji: '💋', cta: 'Öp' },
+              { type: 'sarilma', title: 'Sarılma', emoji: '🤗', cta: 'Sarıl' }
+            ].map((jar, i) => {
+              const balls = getProportionalBalls(dailyAffections, jar.type, 100)
+              const bahaCount = dailyAffections.filter(a => a.type === jar.type && a.username === 'baha').length
+              const aysenurCount = dailyAffections.filter(a => a.type === jar.type && a.username === 'aysenur').length
+              return (
+                <div key={jar.type} className="jar-card" data-reveal style={{ '--i': i }}>
+                  <h3 className="jar-name">{jar.title}</h3>
+                  <Jar uid={jar.type} balls={balls} />
+
+                  {(currentUser?.username === 'baha' || currentUser?.username === 'aysenur') && (
+                    <button className="btn btn-primary btn-block jar-cta" onClick={() => handleAddAffection(jar.type)}>
+                      {jar.emoji} {jar.cta}
+                    </button>
+                  )}
+
+                  <div className="jar-stats">
+                    <div className="jar-stat">
+                      <span>Baha</span>
+                      <b>{bahaCount}</b>
+                    </div>
+                    <div className="jar-stat">
+                      <span>Ayşenur</span>
+                      <b>{aysenurCount}</b>
+                    </div>
+                  </div>
+                </div>
+              )
+            })}
           </div>
         </section>
 
-        {/* Not Ekleme Modal */}
-        {showNotesModal && currentUser?.role === 'admin' && (
-          <div className="upload-modal-overlay" onClick={() => {
-            setShowNotesModal(false)
-            setEditingNote(null)
-            setNewNote('')
-          }}>
-            <div className="upload-modal" onClick={(e) => e.stopPropagation()}>
-              <button 
-                className="upload-modal-close" 
-                onClick={() => {
-                  setShowNotesModal(false)
-                  setEditingNote(null)
-                  setNewNote('')
-                }}
-              >
-                ✕
-              </button>
-              <h2>{editingNote && editingNote !== 'all' ? 'Not Düzenle ✏️' : 'Sevgilime Not Yaz 💌'}</h2>
-              <p>{editingNote && editingNote !== 'all' ? 'Notu güncelleyin!' : 'Sevgilinize özel bir mesaj bırakın!'}</p>
-              <form onSubmit={handleAddNote} className="note-form">
-                <textarea
-                  value={newNote}
-                  onChange={(e) => setNewNote(e.target.value)}
-                  placeholder="Sevgilime yazmak istediğim..."
-                  className="note-textarea"
-                  rows="6"
-                  required
-                />
-                <button type="submit" className="login-button">
-                  {editingNote && editingNote !== 'all' ? '💕 Güncelle' : '💕 Not Ekle'}
-                </button>
-              </form>
+        {/* Müzik */}
+        <section id="music" className="section">
+          <div className="sec-head" data-reveal>
+            <div className="sec-head-text">
+              <span className="eyebrow">Playlist</span>
+              <h2 className="sec-title">Bizim <em>Müziklerimiz</em></h2>
+              <p className="sec-sub">Bize ait olan şarkılar</p>
             </div>
           </div>
-        )}
-
-        {/* Sesli Not Ekleme Modal */}
-        {showAudioNotesModal && currentUser?.role === 'admin' && (
-          <div className="upload-modal-overlay" onClick={() => {
-            if (isRecording) {
-              cancelRecording()
-            }
-            setShowAudioNotesModal(false)
-            setEditingAudioNote(null)
-            setAudioNoteTitle('')
-            setAudioChunks([])
-            setRecordingTime(0)
-          }}>
-            <div className="upload-modal" onClick={(e) => e.stopPropagation()}>
-              <button 
-                className="upload-modal-close" 
-                onClick={() => {
-                  if (isRecording) {
-                    cancelRecording()
-                  }
-                  setShowAudioNotesModal(false)
-                  setEditingAudioNote(null)
-                  setAudioNoteTitle('')
-                  setAudioChunks([])
-                  setRecordingTime(0)
-                }}
-              >
-                ✕
-              </button>
-              <h2>{editingAudioNote && editingAudioNote !== 'all' ? 'Sesli Not Düzenle ✏️' : 'Sesli Not Kaydet 🎤'}</h2>
-              <p>{editingAudioNote && editingAudioNote !== 'all' ? 'Sesli notu güncelleyin!' : 'Sevgilinize özel bir ses kaydı yapın!'}</p>
-              <form onSubmit={handleAddAudioNote} className="note-form">
-                {/* Başlık Input */}
-                <input
-                  type="text"
-                  value={audioNoteTitle}
-                  onChange={(e) => setAudioNoteTitle(e.target.value)}
-                  placeholder="Başlık (Opsiyonel)"
-                  className="note-textarea"
-                  style={{ minHeight: 'auto', padding: '12px 20px', marginBottom: '15px' }}
-                />
-                
-                {/* Ses Kayıt Bölümü */}
-                <div className="audio-recording-section">
-                  {!isRecording && audioChunks.length === 0 && (
-                    <button
-                      type="button"
-                      className="start-recording-button"
-                      onClick={startRecording}
-                    >
-                      🎤 Ses Kaydı Başlat
-                    </button>
-                  )}
-                  
-                  {isRecording && (
-                    <div className="recording-controls">
-                      <div className="recording-indicator">
-                        <span className="recording-dot"></span>
-                        <span>Kaydediliyor... {Math.floor(recordingTime / 60)}:{(recordingTime % 60).toString().padStart(2, '0')}</span>
-                      </div>
-                      <div className="recording-buttons">
-                        <button
-                          type="button"
-                          className="stop-recording-button"
-                          onClick={stopRecording}
-                        >
-                          ⏹️ Durdur
-                        </button>
-                        <button
-                          type="button"
-                          className="cancel-recording-button"
-                          onClick={cancelRecording}
-                        >
-                          ❌ İptal
-                        </button>
-                      </div>
-                    </div>
-                  )}
-                  
-                  {!isRecording && audioChunks.length > 0 && (
-                    <div className="audio-preview">
-                      <audio 
-                        src={URL.createObjectURL(new Blob(audioChunks, { type: 'audio/webm' }))}
-                        controls
-                        className="audio-preview-player"
-                      />
-                      <button
-                        type="button"
-                        className="remove-audio-button"
-                        onClick={() => {
-                          setAudioChunks([])
-                          setRecordingTime(0)
-                        }}
-                      >
-                        🗑️ Ses Kaydını Kaldır
-                      </button>
-                    </div>
-                  )}
-                </div>
-                
-                <button 
-                  type="submit" 
-                  className="login-button"
-                  disabled={audioChunks.length === 0}
-                >
-                  {editingAudioNote && editingAudioNote !== 'all' ? '💕 Güncelle' : '💕 Sesli Not Ekle'}
-                </button>
-              </form>
-            </div>
-          </div>
-        )}
-
-        {/* Spotify Playlist Bölümü */}
-        <section className="spotify-section">
-          <h2 className="spotify-title">
-            <span className="title-decoration">🎵</span>
-            Bizim Müziklerimiz
-          </h2>
-          <div className="spotify-container">
+          <div className="music-frame" data-reveal>
             <iframe
-              style={{ borderRadius: '12px' }}
               src="https://open.spotify.com/embed/playlist/2vshuINzSOm7vXwdP8eeIR?utm_source=generator&theme=0"
               width="100%"
-              height="352"
+              height="380"
               frameBorder="0"
               allowFullScreen
               allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture"
               loading="lazy"
               title="Bizim Müziklerimiz"
-            ></iframe>
-            </div>
-        </section>
-
-        {/* Günlük Kavanoz Bölümü */}
-        <section className="jar-section">
-          <h2 className="jar-title">
-            <span className="title-decoration">💕</span>
-            Aşk Kavanozu
-          </h2>
-          <div className="jars-container">
-            {/* Özledim Kavanozu */}
-            <div className="jar-item">
-              <h3 className="jar-item-title">💙 Özledim</h3>
-              <div className="jar">
-                <div className="jar-body">
-                  <div className="jar-balls-container">
-                    {getProportionalBalls(dailyAffections, 'ozeldim', 100)
-                      .map((affection, index) => {
-                        const cols = 10
-                        const row = Math.floor(index / cols)
-                        const col = index % cols
-                        const position = {
-                          left: `${5 + col * 9}%`,
-                          bottom: `${3 + row * 8}%`
-                        }
-                        return (
-                          <div
-                            key={`ozeldim-${affection.id}`}
-                            className={`jar-ball ${affection.color === 'blue' ? 'ball-blue' : 'ball-pink'}`}
-                            style={position}
-                          >
-                            💙
-            </div>
-                        )
-                      })}
-            </div>
-                </div>
-              </div>
-              {(currentUser?.username === 'baha' || currentUser?.username === 'aysenur') && (
-                <button 
-                  className="jar-button jar-button-ozeldim"
-                  onClick={() => handleAddAffection('ozeldim')}
-                >
-                  💙 Özledim
-                </button>
-              )}
-              <div className="jar-stats-container">
-                <div className="jar-stat-item">
-                  <span className="jar-stat-label">💙 Baha</span>
-                  <span className="jar-stat-number">{dailyAffections.filter(a => a.type === 'ozeldim' && a.username === 'baha').length}</span>
-                </div>
-                <div className="jar-stat-item">
-                  <span className="jar-stat-label">💕 Ayşenur</span>
-                  <span className="jar-stat-number">{dailyAffections.filter(a => a.type === 'ozeldim' && a.username === 'aysenur').length}</span>
-                </div>
-              </div>
-            </div>
-
-            {/* Öpücük Kavanozu */}
-            <div className="jar-item">
-              <h3 className="jar-item-title">💋 Öpücük</h3>
-              <div className="jar">
-                <div className="jar-body">
-                  <div className="jar-balls-container">
-                    {getProportionalBalls(dailyAffections, 'opucuk', 100)
-                      .map((affection, index) => {
-                        const cols = 10
-                        const row = Math.floor(index / cols)
-                        const col = index % cols
-                        const position = {
-                          left: `${5 + col * 9}%`,
-                          bottom: `${3 + row * 8}%`
-                        }
-                        return (
-                          <div
-                            key={`opucuk-${affection.id}`}
-                            className={`jar-ball ${affection.color === 'blue' ? 'ball-blue' : 'ball-pink'}`}
-                            style={position}
-                          >
-                            💋
-                          </div>
-                        )
-                      })}
-                  </div>
-                </div>
-              </div>
-              {(currentUser?.username === 'baha' || currentUser?.username === 'aysenur') && (
-                <button 
-                  className="jar-button jar-button-opucuk"
-                  onClick={() => handleAddAffection('opucuk')}
-                >
-                  💋 Öp
-                </button>
-              )}
-              <div className="jar-stats-container">
-                <div className="jar-stat-item">
-                  <span className="jar-stat-label">💙 Baha</span>
-                  <span className="jar-stat-number">{dailyAffections.filter(a => a.type === 'opucuk' && a.username === 'baha').length}</span>
-                </div>
-                <div className="jar-stat-item">
-                  <span className="jar-stat-label">💕 Ayşenur</span>
-                  <span className="jar-stat-number">{dailyAffections.filter(a => a.type === 'opucuk' && a.username === 'aysenur').length}</span>
-                </div>
-              </div>
-            </div>
-
-            {/* Sarılma Kavanozu */}
-            <div className="jar-item">
-              <h3 className="jar-item-title">🤗 Sarılma</h3>
-              <div className="jar">
-                <div className="jar-body">
-                  <div className="jar-balls-container">
-                    {getProportionalBalls(dailyAffections, 'sarilma', 100)
-                      .map((affection, index) => {
-                        const cols = 10
-                        const row = Math.floor(index / cols)
-                        const col = index % cols
-                        const position = {
-                          left: `${5 + col * 9}%`,
-                          bottom: `${3 + row * 8}%`
-                        }
-                        return (
-                          <div
-                            key={`sarilma-${affection.id}`}
-                            className={`jar-ball ${affection.color === 'blue' ? 'ball-blue' : 'ball-pink'}`}
-                            style={position}
-                          >
-                            🤗
-                          </div>
-                        )
-                      })}
-                  </div>
-                </div>
-              </div>
-              {(currentUser?.username === 'baha' || currentUser?.username === 'aysenur') && (
-                <button 
-                  className="jar-button jar-button-sarilma"
-                  onClick={() => handleAddAffection('sarilma')}
-                >
-                  🤗 Sarıl
-                </button>
-              )}
-              <div className="jar-stats-container">
-                <div className="jar-stat-item">
-                  <span className="jar-stat-label">💙 Baha</span>
-                  <span className="jar-stat-number">{dailyAffections.filter(a => a.type === 'sarilma' && a.username === 'baha').length}</span>
-                </div>
-                <div className="jar-stat-item">
-                  <span className="jar-stat-label">💕 Ayşenur</span>
-                  <span className="jar-stat-number">{dailyAffections.filter(a => a.type === 'sarilma' && a.username === 'aysenur').length}</span>
-                </div>
-              </div>
-            </div>
+            />
           </div>
         </section>
 
-        {/* Harita Bölümü */}
-        <section className="map-section">
-          <div className="map-header-section">
-            <h2 className="map-title">
-              <span className="title-decoration">🗺️</span>
-              Birlikte Gittiğimiz Yerler
-            </h2>
+        {/* Yerler */}
+        <section id="places" className="section">
+          <div className="sec-head" data-reveal>
+            <div className="sec-head-text">
+              <span className="eyebrow">Harita</span>
+              <h2 className="sec-title">Birlikte Gittiğimiz <em>Yerler</em></h2>
+              <p className="sec-sub">{visitedPlaces.length} durak ve devamı gelecek</p>
+            </div>
             {currentUser?.role === 'admin' && (
-              <div className="map-actions">
-                <button 
-                  className="add-map-button"
+              <div className="sec-actions">
+                <button
+                  className="btn btn-primary btn-sm"
                   onClick={() => {
                     setEditingPlace(null)
                     setMapForm({ name: '', description: '', date: getTurkeyDateString() })
                     setShowMapModal(true)
                   }}
                 >
-                  📍 Yer Ekle
+                  Yer Ekle
                 </button>
-                <button 
-                  className="edit-places-button"
+                <button
+                  className={`btn btn-ghost btn-sm ${editingPlace === 'all' ? 'is-active' : ''}`}
                   onClick={() => setEditingPlace(editingPlace ? null : 'all')}
                 >
-                  {editingPlace ? '✅ Bitti' : '✏️ Düzenle'}
+                  {editingPlace ? 'Bitti' : 'Düzenle'}
                 </button>
               </div>
             )}
           </div>
-          <div className="places-list-container">
-            {visitedPlaces.length === 0 ? (
-              <div className="no-places">
-                <p>Henüz yer eklenmemiş 💭</p>
-                {currentUser?.role === 'admin' && (
-                  <p className="map-hint">İlk yerinizi ekleyin!</p>
-                )}
-              </div>
-            ) : (
-              <>
+
+          {visitedPlaces.length === 0 ? (
+            <div className="empty" data-reveal>
+              <p>Henüz yer eklenmemiş</p>
+              {currentUser?.role === 'admin' && <span>İlk durağınızı ekleyin</span>}
+            </div>
+          ) : (
+            <>
+              <div className="places-list">
                 {(() => {
-                  const totalPages = Math.ceil(visitedPlaces.length / placesPerPage)
                   const startIndex = (currentPlacesPage - 1) * placesPerPage
-                  const endIndex = startIndex + placesPerPage
-                  const currentPlaces = visitedPlaces.slice(startIndex, endIndex)
-                  
-                  return (
-                    <>
-                      <div className="places-list">
-                        {currentPlaces.map((place) => (
-                          <div key={place.id} className="place-card">
-                            <div className="place-card-content">
-                              <h3 className="place-name">📍 {place.name}</h3>
-                              {place.description && (
-                                <p className="place-description">{place.description}</p>
-                              )}
-                              <span className="place-date">
-                                {new Date(place.created_at).toLocaleDateString('tr-TR', {
-                                  day: 'numeric',
-                                  month: 'long',
-                                  year: 'numeric'
-                                })}
-                              </span>
-                            </div>
-                            {currentUser?.role === 'admin' && editingPlace === 'all' && (
-                              <>
-                                <button 
-                                  className="place-edit-btn"
-                                  onClick={() => handleEditPlace(place)}
-                                  title="Düzenle"
-                                >
-                                  ✏️
-                                </button>
-                                <button 
-                                  className="place-delete-btn"
-                                  onClick={() => handleDeletePlace(place.id)}
-                                  title="Sil"
-                                >
-                                  🗑️
-                                </button>
-                              </>
-                            )}
-                          </div>
-                        ))}
+                  return visitedPlaces.slice(startIndex, startIndex + placesPerPage).map((place, i) => (
+                    <article key={place.id} className="place-card" data-reveal style={{ '--i': i }}>
+                      <span className="place-num">{String(startIndex + i + 1).padStart(2, '0')}</span>
+                      <div className="place-body">
+                        <h3>{place.name}</h3>
+                        {place.description && <p>{place.description}</p>}
                       </div>
-                      
-                      {/* Sayfa Navigasyonu */}
-                      {totalPages > 1 && (
-                        <div className="places-pagination">
-                          <button
-                            className="pagination-btn"
-                            onClick={() => setCurrentPlacesPage(prev => Math.max(1, prev - 1))}
-                            disabled={currentPlacesPage === 1}
-                          >
-                            ← Önceki
-                          </button>
-                          <span className="pagination-info">
-                            Sayfa {currentPlacesPage} / {totalPages}
-                          </span>
-                          <button
-                            className="pagination-btn"
-                            onClick={() => setCurrentPlacesPage(prev => Math.min(totalPages, prev + 1))}
-                            disabled={currentPlacesPage === totalPages}
-                          >
-                            Sonraki →
-                          </button>
+                      <time className="place-date">
+                        {new Date(place.created_at).toLocaleDateString('tr-TR', {
+                          day: 'numeric', month: 'long', year: 'numeric'
+                        })}
+                      </time>
+                      {currentUser?.role === 'admin' && editingPlace === 'all' && (
+                        <div className="card-tools">
+                          <button className="icon-btn" onClick={() => handleEditPlace(place)} title="Düzenle">✎</button>
+                          <button className="icon-btn is-danger" onClick={() => handleDeletePlace(place.id)} title="Sil">✕</button>
                         </div>
                       )}
-                    </>
-                  )
+                    </article>
+                  ))
                 })()}
-              </>
-            )}
-          </div>
+              </div>
+
+              {visitedPlaces.length > placesPerPage && (
+                <Pagination
+                  page={currentPlacesPage}
+                  total={Math.ceil(visitedPlaces.length / placesPerPage)}
+                  onChange={setCurrentPlacesPage}
+                />
+              )}
+            </>
+          )}
         </section>
 
-        {/* Özel anlar timeline */}
-        <section className="timeline">
-          <div className="timeline-header-section">
-            <h2 className="timeline-title">Özel Anlarımız</h2>
+        {/* Zaman çizelgesi */}
+        <section id="timeline" className="section">
+          <div className="sec-head" data-reveal>
+            <div className="sec-head-text">
+              <span className="eyebrow">Kronoloji</span>
+              <h2 className="sec-title">Özel <em>Anlarımız</em></h2>
+              <p className="sec-sub">Başlangıçtan bugüne</p>
+            </div>
             {currentUser?.role === 'admin' && (
-              <div className="timeline-actions">
-                <button 
-                  className="add-timeline-button"
+              <div className="sec-actions">
+                <button
+                  className="btn btn-primary btn-sm"
                   onClick={() => {
                     setEditingTimeline(null)
                     setTimelineForm({ icon: '', title: '', date: '', description: '' })
                     setShowTimelineModal(true)
                   }}
                 >
-                  ➕ Olay Ekle
+                  Olay Ekle
                 </button>
-                <button 
-                  className="edit-timeline-button"
+                <button
+                  className={`btn btn-ghost btn-sm ${editingTimeline === 'all' ? 'is-active' : ''}`}
                   onClick={() => setEditingTimeline(editingTimeline ? null : 'all')}
                 >
-                  {editingTimeline === 'all' ? '✅ Bitti' : '✏️ Düzenle'}
+                  {editingTimeline === 'all' ? 'Bitti' : 'Düzenle'}
                 </button>
               </div>
             )}
           </div>
-          <div className="timeline-container">
-            {timelineEvents.length === 0 ? (
-              <div className="no-timeline">
-                <p>Henüz özel an eklenmemiş 💭</p>
-                {currentUser?.role === 'admin' && (
-                  <p className="timeline-hint">İlk anınızı ekleyin!</p>
-                )}
-              </div>
-            ) : (
-              timelineEvents.map((event) => (
-                <div key={event.id} className="timeline-item">
-                  <div className="timeline-icon">{event.icon}</div>
-                  <div className="timeline-content">
+
+          {timelineEvents.length === 0 ? (
+            <div className="empty" data-reveal>
+              <p>Henüz özel an eklenmemiş</p>
+              {currentUser?.role === 'admin' && <span>İlk anınızı ekleyin</span>}
+            </div>
+          ) : (
+            <div className="timeline">
+              {timelineEvents.map((event, i) => (
+                <article key={event.id} className="tl-item" data-reveal style={{ '--i': i % 4 }}>
+                  <div className="tl-aside">
+                    <span className="tl-glyph">{event.icon}</span>
+                    <time className="tl-date">{event.date}</time>
+                  </div>
+                  <div className="tl-card">
                     <h3>{event.title}</h3>
-                    <p className="timeline-date">{event.date}</p>
                     <p>{event.description}</p>
                     {currentUser?.role === 'admin' && editingTimeline === 'all' && (
-                      <>
-                        <button 
-                          className="timeline-edit-btn"
-                          onClick={() => handleEditTimeline(event)}
-                          title="Düzenle"
-                        >
-                          ✏️
-                        </button>
-                        <button 
-                          className="timeline-delete-btn"
-                          onClick={() => handleDeleteTimeline(event.id)}
-                          title="Sil"
-                        >
-                          🗑️
-                        </button>
-                      </>
+                      <div className="card-tools">
+                        <button className="icon-btn" onClick={() => handleEditTimeline(event)} title="Düzenle">✎</button>
+                        <button className="icon-btn is-danger" onClick={() => handleDeleteTimeline(event.id)} title="Sil">✕</button>
+                      </div>
                     )}
                   </div>
-                </div>
-              ))
-            )}
-          </div>
+                </article>
+              ))}
+            </div>
+          )}
         </section>
 
-        {/* Timeline Ekleme Modal */}
-        {showTimelineModal && currentUser?.role === 'admin' && (
-          <div className="upload-modal-overlay" onClick={() => {
-            setShowTimelineModal(false)
-            setEditingTimeline(null)
-            setTimelineForm({ icon: '', title: '', date: '', description: '' })
-          }}>
-            <div className="upload-modal timeline-modal" onClick={(e) => e.stopPropagation()}>
-              <button 
-                className="upload-modal-close" 
-                onClick={() => {
-                  setShowTimelineModal(false)
-                  setEditingTimeline(null)
-                  setTimelineForm({ icon: '', title: '', date: '', description: '' })
-                }}
-              >
-                ✕
-              </button>
-              <h2>{editingTimeline && editingTimeline !== 'all' ? 'Özel An Düzenle ✏️' : 'Özel An Ekle 💫'}</h2>
-              <p>{editingTimeline && editingTimeline !== 'all' ? 'Özel anı güncelleyin!' : "Yeni bir özel anınızı timeline'a ekleyin!"}</p>
-              <form onSubmit={handleAddTimeline} className="timeline-form">
-                <div className="input-group">
-                  <label>İkon (Emoji)</label>
-                  <input
-                    type="text"
-                    value={timelineForm.icon}
-                    onChange={(e) => setTimelineForm({...timelineForm, icon: e.target.value})}
-                    placeholder="Örn: 🎉, 💕, ✨"
-                    maxLength="2"
-                    required
-                  />
-                </div>
-                <div className="input-group">
-                  <label>Başlık</label>
-                  <input
-                    type="text"
-                    value={timelineForm.title}
-                    onChange={(e) => setTimelineForm({...timelineForm, title: e.target.value})}
-                    placeholder="Örn: İlk Buluşmamız"
-                    required
-                  />
-                </div>
-                <div className="input-group">
-                  <label>Tarih</label>
-                  <input
-                    type="text"
-                    value={timelineForm.date}
-                    onChange={(e) => setTimelineForm({...timelineForm, date: e.target.value})}
-                    placeholder="Örn: 14 Şubat 2025"
-                    required
-                  />
-                </div>
-                <div className="input-group">
-                  <label>Açıklama</label>
-                  <textarea
-                    value={timelineForm.description}
-                    onChange={(e) => setTimelineForm({...timelineForm, description: e.target.value})}
-                    placeholder="Bu özel anı açıklayın..."
-                    className="note-textarea"
-                    rows="4"
-                    required
-                  />
-                </div>
-                <button type="submit" className="login-button">
-                  {editingTimeline && editingTimeline !== 'all' ? '💕 Güncelle' : '💕 Ekle'}
-                </button>
-              </form>
-            </div>
+        <footer className="footer" data-reveal>
+          <span className="footer-heart">♥</span>
+          <p className="footer-line">Sonsuza <em>dek</em> birlikte</p>
+          <div className="footer-meta">
+            <span>{currentDate.toLocaleDateString('tr-TR', { year: 'numeric', month: 'long', day: 'numeric' })}</span>
+            <span>{daysTogether} gün</span>
+            <button onClick={handleLogout} className="btn btn-quiet btn-sm">Çıkış Yap</button>
           </div>
-        )}
-
-        {/* Upload Modal */}
-        {showUploadModal && currentUser?.role === 'admin' && (
-          <div className="upload-modal-overlay" onClick={() => setShowUploadModal(false)}>
-            <div className="upload-modal" onClick={(e) => e.stopPropagation()}>
-              <button 
-                className="upload-modal-close" 
-                onClick={() => setShowUploadModal(false)}
-              >
-                ✕
-              </button>
-              <h2>Fotoğraf Yükle 📸</h2>
-              <p>Sevgilinizle çektiğiniz özel bir fotoğrafı yükleyin!</p>
-              <div className="upload-area">
-                <input
-                  type="file"
-                  accept="image/*"
-                  onChange={handlePhotoUpload}
-                  disabled={uploading}
-                  id="photo-upload"
-                  style={{ display: 'none' }}
-                />
-                <label htmlFor="photo-upload" className={`upload-label ${uploading ? 'uploading' : ''}`}>
-                  {uploading ? (
-                    <>
-                      <div className="upload-spinner"></div>
-                      <span>Yükleniyor... 💕</span>
-                    </>
-                  ) : (
-                    <>
-                      <span className="upload-icon">📷</span>
-                      <span>Fotoğraf Seç</span>
-                    </>
-                  )}
-                </label>
-              </div>
-              <div className="upload-hint">
-                💡 JPG, PNG veya JPEG formatında olmalı
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Harita Yer Ekleme Modal */}
-        {showMapModal && currentUser?.role === 'admin' && (
-          <div className="upload-modal-overlay" onClick={() => {
-            setShowMapModal(false)
-            setEditingPlace(null)
-            setMapForm({ name: '', description: '', date: getTurkeyDateString() })
-          }}>
-            <div className="upload-modal map-modal" onClick={(e) => e.stopPropagation()}>
-              <button 
-                className="upload-modal-close" 
-                onClick={() => {
-                  setShowMapModal(false)
-                  setEditingPlace(null)
-                  setMapForm({ name: '', description: '', date: getTurkeyDateString() })
-                }}
-              >
-                ✕
-              </button>
-              <h2>{editingPlace && editingPlace !== 'all' ? 'Yer Düzenle ✏️' : 'Yer Ekle 📍'}</h2>
-              <p>{editingPlace && editingPlace !== 'all' ? 'Yer bilgilerini güncelleyin!' : 'Birlikte gittiğiniz özel bir yeri haritaya ekleyin!'}</p>
-              <form onSubmit={handleAddPlace} className="map-form">
-                <div className="input-group">
-                  <label>Yer Adı</label>
-                  <input
-                    type="text"
-                    value={mapForm.name}
-                    onChange={(e) => setMapForm({...mapForm, name: e.target.value})}
-                    placeholder="Örn: İstanbul, Kapadokya"
-                    required
-                  />
-                </div>
-                <div className="input-group">
-                  <label>Açıklama (Opsiyonel)</label>
-                  <textarea
-                    value={mapForm.description}
-                    onChange={(e) => setMapForm({...mapForm, description: e.target.value})}
-                    placeholder="Bu yer hakkında bir şeyler yazın..."
-                    className="note-textarea"
-                    rows="3"
-                  />
-                </div>
-                <div className="input-group">
-                  <label>Tarih</label>
-                  <input
-                    type="date"
-                    value={mapForm.date}
-                    onChange={(e) => setMapForm({...mapForm, date: e.target.value})}
-                    max={getTurkeyDateString()}
-                    required
-                  />
-                </div>
-                <button type="submit" className="login-button">
-                  {editingPlace && editingPlace !== 'all' ? '💕 Güncelle' : '💕 Yer Ekle'}
-                </button>
-              </form>
-            </div>
-          </div>
-        )}
-
-        {/* Footer */}
-        <footer className="footer">
-          <div className="footer-heart">💕</div>
-          <p>Sonsuza dek birlikte...</p>
-          <p className="footer-date">{currentDate.toLocaleDateString('tr-TR', { 
-            year: 'numeric', 
-            month: 'long', 
-            day: 'numeric' 
-          })}</p>
-          <button onClick={handleLogout} className="logout-button">
-            🚪 Çıkış Yap
-          </button>
         </footer>
+      </main>
+
+      {/* Mobil hızlı gezinme */}
+      <nav className="tabbar">
+        {NAV_ITEMS.slice(0, 5).map(item => (
+          <button
+            key={item.id}
+            className={`tab ${activeSection === item.id ? 'is-active' : ''}`}
+            onClick={() => goToSection(item.id)}
+          >
+            <span className="tab-dot" />
+            <span className="tab-label">{item.label}</span>
+          </button>
+        ))}
+      </nav>
+
+      {/* Lightbox */}
+      {lightboxImage && (
+        <div
+          className="lightbox"
+          onClick={() => setLightboxImage(null)}
+          onTouchStart={(e) => { lightboxTouchX.current = e.touches[0].clientX }}
+          onTouchEnd={(e) => {
+            if (lightboxTouchX.current === null) return
+            const delta = e.changedTouches[0].clientX - lightboxTouchX.current
+            if (Math.abs(delta) > 60) showLightboxNeighbor(delta < 0 ? 1 : -1)
+            lightboxTouchX.current = null
+          }}
+        >
+          <div className="lightbox-bar" onClick={(e) => e.stopPropagation()}>
+            <span className="lightbox-count">
+              {photos.indexOf(lightboxImage) + 1} / {photos.length}
+            </span>
+            <div className="lightbox-bar-actions">
+              {currentUser?.role === 'admin' && (
+                <button className="icon-btn is-danger" onClick={() => handlePhotoDelete(lightboxImage)} aria-label="Sil">🗑</button>
+              )}
+              <button className="icon-btn" onClick={() => setLightboxImage(null)} aria-label="Kapat">✕</button>
+            </div>
+          </div>
+
+          <div className="lightbox-stage" onClick={(e) => e.stopPropagation()}>
+            <button className="lightbox-arrow prev" onClick={() => showLightboxNeighbor(-1)} aria-label="Önceki">‹</button>
+            <img key={lightboxImage} src={lightboxImage} alt="Büyük görsel" />
+            <button className="lightbox-arrow next" onClick={() => showLightboxNeighbor(1)} aria-label="Sonraki">›</button>
+          </div>
+
+          <p className="lightbox-hint">Kaydırarak veya ← → tuşlarıyla gezinin · ESC ile kapatın</p>
+        </div>
+      )}
+
+      {/* Not modalı */}
+      <Modal
+        open={showNotesModal && currentUser?.role === 'admin'}
+        onClose={() => { setShowNotesModal(false); setEditingNote(null); setNewNote('') }}
+        title={editingNote && editingNote !== 'all' ? 'Notu Düzenle' : 'Sevgilime Not Yaz'}
+        subtitle={editingNote && editingNote !== 'all' ? 'Notu güncelleyin' : 'Sevgilinize özel bir mesaj bırakın'}
+      >
+        <form onSubmit={handleAddNote} className="form">
+          <label className="field">
+            <span className="field-label">Mesaj</span>
+            <textarea
+              value={newNote}
+              onChange={(e) => setNewNote(e.target.value)}
+              placeholder="Sevgilime yazmak istediğim..."
+              rows="6"
+              required
+            />
+          </label>
+          <button type="submit" className="btn btn-primary btn-block">
+            {editingNote && editingNote !== 'all' ? 'Güncelle' : 'Notu Ekle'}
+          </button>
+        </form>
+      </Modal>
+
+      {/* Sesli not modalı */}
+      <Modal
+        open={showAudioNotesModal && currentUser?.role === 'admin'}
+        onClose={() => {
+          if (isRecording) cancelRecording()
+          setShowAudioNotesModal(false)
+          setEditingAudioNote(null)
+          setAudioNoteTitle('')
+          setAudioChunks([])
+          setRecordingTime(0)
+        }}
+        title={editingAudioNote && editingAudioNote !== 'all' ? 'Sesli Notu Düzenle' : 'Sesli Not Kaydet'}
+        subtitle={editingAudioNote && editingAudioNote !== 'all' ? 'Kaydı güncelleyin' : 'Sevgilinize özel bir ses kaydı bırakın'}
+      >
+        <form onSubmit={handleAddAudioNote} className="form">
+          <label className="field">
+            <span className="field-label">Başlık (opsiyonel)</span>
+            <input
+              type="text"
+              value={audioNoteTitle}
+              onChange={(e) => setAudioNoteTitle(e.target.value)}
+              placeholder="Örn: İyi geceler mesajı"
+            />
+          </label>
+
+          <div className="recorder">
+            {!isRecording && audioChunks.length === 0 && (
+              <button type="button" className="rec-start" onClick={startRecording}>
+                <span className="rec-dot" />
+                Kaydı Başlat
+              </button>
+            )}
+
+            {isRecording && (
+              <div className="rec-live">
+                <div className="rec-status">
+                  <span className="rec-pulse" />
+                  Kaydediliyor · {Math.floor(recordingTime / 60)}:{(recordingTime % 60).toString().padStart(2, '0')}
+                </div>
+                <div className="rec-bars" aria-hidden="true">
+                  {Array.from({ length: 24 }).map((_, i) => (
+                    <span key={i} style={{ '--b': i }} />
+                  ))}
+                </div>
+                <div className="rec-actions">
+                  <button type="button" className="btn btn-primary btn-sm" onClick={stopRecording}>Durdur</button>
+                  <button type="button" className="btn btn-quiet btn-sm" onClick={cancelRecording}>İptal</button>
+                </div>
+              </div>
+            )}
+
+            {!isRecording && audioChunks.length > 0 && (
+              <div className="rec-preview">
+                <audio
+                  src={URL.createObjectURL(new Blob(audioChunks, { type: 'audio/webm' }))}
+                  controls
+                />
+                <button
+                  type="button"
+                  className="btn btn-quiet btn-sm"
+                  onClick={() => { setAudioChunks([]); setRecordingTime(0) }}
+                >
+                  Kaydı Kaldır
+                </button>
+              </div>
+            )}
+          </div>
+
+          <button type="submit" className="btn btn-primary btn-block" disabled={audioChunks.length === 0}>
+            {editingAudioNote && editingAudioNote !== 'all' ? 'Güncelle' : 'Sesli Notu Ekle'}
+          </button>
+        </form>
+      </Modal>
+
+      {/* Timeline modalı */}
+      <Modal
+        open={showTimelineModal && currentUser?.role === 'admin'}
+        onClose={() => {
+          setShowTimelineModal(false)
+          setEditingTimeline(null)
+          setTimelineForm({ icon: '', title: '', date: '', description: '' })
+        }}
+        title={editingTimeline && editingTimeline !== 'all' ? 'Özel Anı Düzenle' : 'Özel An Ekle'}
+        subtitle={editingTimeline && editingTimeline !== 'all' ? 'Anıyı güncelleyin' : 'Yeni bir anıyı zaman çizelgesine ekleyin'}
+      >
+        <form onSubmit={handleAddTimeline} className="form">
+          <div className="field-row">
+            <label className="field field-narrow">
+              <span className="field-label">İkon</span>
+              <input
+                type="text"
+                value={timelineForm.icon}
+                onChange={(e) => setTimelineForm({ ...timelineForm, icon: e.target.value })}
+                placeholder="🎉"
+                maxLength="2"
+                required
+              />
+            </label>
+            <label className="field">
+              <span className="field-label">Başlık</span>
+              <input
+                type="text"
+                value={timelineForm.title}
+                onChange={(e) => setTimelineForm({ ...timelineForm, title: e.target.value })}
+                placeholder="Örn: İlk Buluşmamız"
+                required
+              />
+            </label>
+          </div>
+          <label className="field">
+            <span className="field-label">Tarih</span>
+            <input
+              type="text"
+              value={timelineForm.date}
+              onChange={(e) => setTimelineForm({ ...timelineForm, date: e.target.value })}
+              placeholder="Örn: 14 Şubat 2025"
+              required
+            />
+          </label>
+          <label className="field">
+            <span className="field-label">Açıklama</span>
+            <textarea
+              value={timelineForm.description}
+              onChange={(e) => setTimelineForm({ ...timelineForm, description: e.target.value })}
+              placeholder="Bu özel anı açıklayın..."
+              rows="4"
+              required
+            />
+          </label>
+          <button type="submit" className="btn btn-primary btn-block">
+            {editingTimeline && editingTimeline !== 'all' ? 'Güncelle' : 'Ekle'}
+          </button>
+        </form>
+      </Modal>
+
+      {/* Fotoğraf yükleme modalı */}
+      <Modal
+        open={showUploadModal && currentUser?.role === 'admin'}
+        onClose={() => setShowUploadModal(false)}
+        title="Fotoğraf Yükle"
+        subtitle="Birlikte çektiğiniz özel bir kareyi ekleyin"
+      >
+        <div className="uploader">
+          <input
+            type="file"
+            accept="image/*"
+            onChange={handlePhotoUpload}
+            disabled={uploading}
+            id="photo-upload"
+            hidden
+          />
+          <label htmlFor="photo-upload" className={`dropzone ${uploading ? 'is-busy' : ''}`}>
+            {uploading ? (
+              <>
+                <span className="spinner" />
+                <span>Yükleniyor…</span>
+              </>
+            ) : (
+              <>
+                <span className="dropzone-icon">＋</span>
+                <span className="dropzone-title">Fotoğraf Seç</span>
+                <span className="dropzone-hint">JPG · PNG · JPEG</span>
+              </>
+            )}
+          </label>
+        </div>
+      </Modal>
+
+      {/* Yer ekleme modalı */}
+      <Modal
+        open={showMapModal && currentUser?.role === 'admin'}
+        onClose={() => {
+          setShowMapModal(false)
+          setEditingPlace(null)
+          setMapForm({ name: '', description: '', date: getTurkeyDateString() })
+        }}
+        title={editingPlace && editingPlace !== 'all' ? 'Yeri Düzenle' : 'Yer Ekle'}
+        subtitle={editingPlace && editingPlace !== 'all' ? 'Bilgileri güncelleyin' : 'Birlikte gittiğiniz özel bir yeri ekleyin'}
+      >
+        <form onSubmit={handleAddPlace} className="form">
+          <label className="field">
+            <span className="field-label">Yer Adı</span>
+            <input
+              type="text"
+              value={mapForm.name}
+              onChange={(e) => setMapForm({ ...mapForm, name: e.target.value })}
+              placeholder="Örn: İstanbul, Kapadokya"
+              required
+            />
+          </label>
+          <label className="field">
+            <span className="field-label">Açıklama (opsiyonel)</span>
+            <textarea
+              value={mapForm.description}
+              onChange={(e) => setMapForm({ ...mapForm, description: e.target.value })}
+              placeholder="Bu yer hakkında bir şeyler yazın..."
+              rows="3"
+            />
+          </label>
+          <label className="field">
+            <span className="field-label">Tarih</span>
+            <input
+              type="date"
+              value={mapForm.date}
+              onChange={(e) => setMapForm({ ...mapForm, date: e.target.value })}
+              max={getTurkeyDateString()}
+              required
+            />
+          </label>
+          <button type="submit" className="btn btn-primary btn-block">
+            {editingPlace && editingPlace !== 'all' ? 'Güncelle' : 'Yeri Ekle'}
+          </button>
+        </form>
+      </Modal>
+    </div>
+  )
+}
+
+// Cam kavanoz — SVG ile çizilmiş gövde, içindekiler gövdeye kırpılır
+const JAR_BODY = 'M27 54 C27 38 42 32.5 42 32.5 L78 32.5 C78 32.5 93 38 93 54 L93 140 C93 156.5 81 165 60 165 C39 165 27 156.5 27 140 Z'
+const JAR_INNER = 'M31 55 C31 41 45.5 36 45.5 36 L74.5 36 C74.5 36 89 41 89 55 L89 138.5 C89 152.5 78 160.5 60 160.5 C42 160.5 31 152.5 31 138.5 Z'
+
+function Jar({ uid, balls }) {
+  const cols = 8
+  const stepX = 6.6
+  const stepY = 6.6
+  const baseX = 36.8
+  const baseY = 152
+
+  return (
+    <svg className="jar-svg" viewBox="0 0 120 178" aria-hidden="true">
+      <defs>
+        <linearGradient id={`glass-${uid}`} x1="0" y1="0" x2="1" y2="0">
+          <stop offset="0%" stopColor="#fff" stopOpacity="0.9" />
+          <stop offset="26%" stopColor="#fff" stopOpacity="0.28" />
+          <stop offset="72%" stopColor="#fff" stopOpacity="0.16" />
+          <stop offset="100%" stopColor="#fff" stopOpacity="0.62" />
+        </linearGradient>
+        <linearGradient id={`lid-${uid}`} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="var(--accent-2)" />
+          <stop offset="55%" stopColor="var(--accent-2)" stopOpacity="0.82" />
+          <stop offset="100%" stopColor="var(--accent-2)" stopOpacity="0.55" />
+        </linearGradient>
+        <clipPath id={`inner-${uid}`}>
+          <path d={JAR_INNER} />
+        </clipPath>
+      </defs>
+
+      {/* zemin gölgesi */}
+      <ellipse cx="60" cy="171" rx="29" ry="4.5" fill="var(--ink)" opacity="0.09" />
+
+      {/* kapak */}
+      <rect x="35" y="7" width="50" height="17" rx="6.5" fill={`url(#lid-${uid})`} />
+      <rect x="35" y="7" width="50" height="6" rx="3" fill="#fff" opacity="0.25" />
+      <rect x="41" y="24" width="38" height="9" rx="2.5" fill="var(--accent-2)" opacity="0.55" />
+
+      {/* cam gövde */}
+      <path d={JAR_BODY} fill="var(--paper-2)" opacity="0.55" />
+
+      {/* içindekiler */}
+      <g clipPath={`url(#inner-${uid})`}>
+        {balls.map((affection, index) => {
+          const row = Math.floor(index / cols)
+          const col = index % cols
+          return (
+            <circle
+              key={`${uid}-${affection.id}`}
+              className="jar-ball"
+              cx={baseX + col * stepX}
+              cy={baseY - row * stepY}
+              r="3.1"
+              fill={affection.color === 'blue' ? 'var(--him)' : 'var(--her)'}
+              style={{ animationDelay: `${(index % 14) * 0.05}s` }}
+            />
+          )
+        })}
+      </g>
+
+      {/* cam parlaklığı */}
+      <path d={JAR_BODY} fill={`url(#glass-${uid})`} />
+      <path d={JAR_BODY} fill="none" stroke="var(--ink)" strokeOpacity="0.14" strokeWidth="1.4" />
+      <rect x="37.5" y="62" width="6" height="58" rx="3" fill="#fff" opacity="0.65" />
+      <rect x="48" y="66" width="2.6" height="26" rx="1.3" fill="#fff" opacity="0.4" />
+    </svg>
+  )
+}
+
+function Pagination({ page, total, onChange }) {
+  if (total <= 1) return null
+  return (
+    <div className="pagination" data-reveal>
+      <button className="page-btn" onClick={() => onChange(Math.max(1, page - 1))} disabled={page === 1}>‹</button>
+      <span className="page-count">
+        {String(page).padStart(2, '0')} / {String(total).padStart(2, '0')}
+      </span>
+      <button className="page-btn" onClick={() => onChange(Math.min(total, page + 1))} disabled={page === total}>›</button>
+    </div>
+  )
+}
+
+function Modal({ open, onClose, title, subtitle, children }) {
+  if (!open) return null
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
+        <span className="modal-grip" />
+        <button className="modal-close" onClick={onClose} aria-label="Kapat">✕</button>
+        <header className="modal-head">
+          <h2>{title}</h2>
+          {subtitle && <p>{subtitle}</p>}
+        </header>
+        <div className="modal-body">{children}</div>
       </div>
     </div>
   )
 }
 
 export default App
-
